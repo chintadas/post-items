@@ -1,0 +1,8 @@
+# Credentials
+.env
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+venv/

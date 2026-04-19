@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+google-cloud-storage
+google-generativeai
+shopifyapi
+python-dotenv
