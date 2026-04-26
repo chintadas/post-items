@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 google-cloud-storage
-google-generativeai
+google-genai
 shopifyapi
 python-dotenv
+requests
