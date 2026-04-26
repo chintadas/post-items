@@ -159,6 +159,66 @@ async def analyze_images_via_vlm(gcs_paths: List[str], generate_dummy: bool = Fa
         # Return the model's raw text upstream as the error message source.
         raise ValueError(response.text)
 
+def get_image_paths_for_folder(folder_name: str) -> List[str]:
+    """Returns image blob paths for a given top-level folder."""
+    prefix = f"{folder_name}/"
+    blobs = list(bucket.list_blobs(prefix=prefix))
+    image_paths = [b.name for b in blobs if b.name.lower().endswith((".jpg", ".jpeg", ".png"))]
+    return image_paths
+
+def move_folder_to_listed(folder_name: str) -> None:
+    """Moves all blobs under folder_name/ to listed/folder_name/."""
+    source_prefix = f"{folder_name}/"
+    destination_prefix = f"listed/{folder_name}/"
+    blobs = list(bucket.list_blobs(prefix=source_prefix))
+
+    for blob in blobs:
+        destination_name = blob.name.replace(source_prefix, destination_prefix, 1)
+        bucket.copy_blob(blob, bucket, destination_name)
+        blob.delete()
+
+def get_pending_folders() -> List[str]:
+    """Returns top-level folders that are not already in listed/."""
+    folder_names = set()
+    for blob in bucket.list_blobs():
+        parts = blob.name.split("/")
+        if len(parts) < 2:
+            continue
+        top_level = parts[0].strip()
+        if not top_level or top_level == "listed":
+            continue
+        folder_names.add(top_level)
+    return sorted(folder_names)
+
+async def process_folder_listing(folder_name: str) -> dict:
+    """Lists one folder to Shopify and returns operation metadata."""
+    image_paths = get_image_paths_for_folder(folder_name)
+    if not image_paths:
+        raise ValueError("No images found in that folder.")
+
+    print(f"Found {len(image_paths)} images for folder '{folder_name}': {image_paths}")
+    data = await analyze_images_via_vlm(image_paths, generate_dummy=False)
+
+    activate_shopify_session_with_fresh_token()
+    new_product = shopify.Product()
+    new_product.title = data["title"]
+    new_product.body_html = f"<p>{data['description']}</p><p><b>Material:</b> {data['material']}</p>"
+    new_product.vendor = data["brand"]
+    new_product.tags = ",".join(data["tags"])
+    new_product.status = "draft"
+
+    variant = shopify.Variant({"price": data["price"], "option1": data["size"]})
+    new_product.variants = [variant]
+    new_product.images = [{"src": generate_signed_url(path)} for path in image_paths]
+
+    if not new_product.save():
+        raise Exception("Failed to save to Shopify")
+
+    move_folder_to_listed(folder_name)
+    msg = f"✅ Published: {data['title']} ({data['brand']}) as a draft."
+    send_pushover(msg)
+    return {"status": "success", "product_id": new_product.id, "title": data["title"]}
+
 # --- API Endpoints ---
 
 @app.post("/list-item/{folder_name}")
@@ -166,44 +226,9 @@ async def list_item(folder_name: str, x_api_key: str = Header(None)):
     # 1. Simple Auth Check
     if x_api_key != API_AUTH_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
-    # return {"status": "success", "product_id": 12345}
     try:
-        # 2. Get Blobs from GCS Folder
-        prefix = f"{folder_name}/"
-        blobs = list(bucket.list_blobs(prefix=prefix))
-        
-        if not blobs:
-            raise HTTPException(status_code=404, detail="No images found in that folder.")
-
-        image_paths = [b.name for b in blobs if b.name.lower().endswith(('.jpg', '.jpeg', '.png'))]
-
-        print(f"Found {len(image_paths)} images for folder '{folder_name}': {image_paths}")
-        # 3. Analyze with AI
-        data = await analyze_images_via_vlm(image_paths, generate_dummy=False)
-
-        # 4. Fetch token + create Shopify Product
-        activate_shopify_session_with_fresh_token()
-        new_product = shopify.Product()
-        new_product.title = data['title']
-        new_product.body_html = f"<p>{data['description']}</p><p><b>Material:</b> {data['material']}</p>"
-        new_product.vendor = data['brand']
-        new_product.tags = ",".join(data['tags'])
-        new_product.status = "draft"
-        
-        # Add Price and Size
-        variant = shopify.Variant({'price': data['price'], 'option1': data['size']})
-        new_product.variants = [variant]
-        
-        # Attach Signed URLs for Shopify to pull
-        new_product.images = [{"src": generate_signed_url(path)} for path in image_paths]
-        
-        if new_product.save():
-            # 5. Notify Success
-            msg = f"✅ Published: {data['title']} ({data['brand']}) as a draft."
-            send_pushover(msg)
-            return {"status": "success", "product_id": new_product.id}
-        
-        raise Exception("Failed to save to Shopify")
+        result = await process_folder_listing(folder_name)
+        return result
 
     except Exception as e:
         print(f"Error listing {folder_name}: {e}")
@@ -211,6 +236,39 @@ async def list_item(folder_name: str, x_api_key: str = Header(None)):
         error_msg = str(e)
         send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
         return {"status": "error", "error_msg": error_msg}
+
+@app.post("/list-all-items")
+async def list_all_items(x_api_key: str = Header(None)):
+    # 1. Simple Auth Check
+    if x_api_key != API_AUTH_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    folders = get_pending_folders()
+    if not folders:
+        return {"status": "success", "message": "No pending folders found.", "processed": 0, "results": []}
+
+    results = []
+    success_count = 0
+
+    for folder_name in folders:
+        try:
+            folder_result = await process_folder_listing(folder_name)
+            results.append({"folder": folder_name, **folder_result})
+            success_count += 1
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Error listing {folder_name}: {e}")
+            print(traceback.format_exc())
+            send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
+            results.append({"folder": folder_name, "status": "error", "error_msg": error_msg})
+
+    return {
+        "status": "success",
+        "processed": len(folders),
+        "successful": success_count,
+        "failed": len(folders) - success_count,
+        "results": results,
+    }
 
 if __name__ == "__main__":
     import uvicorn
