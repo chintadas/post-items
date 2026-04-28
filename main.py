@@ -215,7 +215,6 @@ async def process_folder_listing(folder_name: str) -> dict:
         raise Exception("Failed to save to Shopify")
 
     print(f"✅ Shopify save successful for folder '{folder_name}'.")
-    print(f"Shopify product response: {new_product.to_dict()}")
     print(f"Shopify product id: {new_product.id}")
 
     move_folder_to_listed(folder_name)
