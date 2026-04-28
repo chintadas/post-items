@@ -177,6 +177,76 @@ def get_image_paths_for_folder(folder_name: str) -> List[str]:
     image_paths = [b.name for b in blobs if b.name.lower().endswith((".jpg", ".jpeg", ".png"))]
     return image_paths
 
+def get_video_paths_for_folder(folder_name: str) -> List[str]:
+    """Returns video blob paths for a given top-level folder."""
+    prefix = f"{folder_name}/"
+    blobs = list(bucket.list_blobs(prefix=prefix))
+    return [b.name for b in blobs if b.name.lower().endswith((".mov",))]
+
+def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
+    """Uploads GCS-hosted videos as Shopify product media via GraphQL."""
+    if not video_paths:
+        return
+
+    access_token = fetch_shopify_access_token()
+    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
+    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
+    product_gid = f"gid://shopify/Product/{product_id}"
+
+    media_inputs = [
+        {
+            "mediaContentType": "VIDEO",
+            "originalSource": generate_signed_url(path),
+        }
+        for path in video_paths
+    ]
+
+    mutation = """
+    mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) {
+      productCreateMedia(media: $media, productId: $productId) {
+        media {
+          alt
+          mediaContentType
+          status
+        }
+        mediaUserErrors {
+          field
+          message
+        }
+        product {
+          id
+        }
+      }
+    }
+    """
+
+    response = requests.post(
+        graphql_url,
+        headers={
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": access_token,
+        },
+        json={
+            "query": mutation,
+            "variables": {
+                "media": media_inputs,
+                "productId": product_gid,
+            },
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+
+    errors = payload.get("errors")
+    if errors:
+        raise ValueError(f"Shopify GraphQL errors: {errors}")
+
+    media_result = payload.get("data", {}).get("productCreateMedia", {})
+    media_user_errors = media_result.get("mediaUserErrors", [])
+    if media_user_errors:
+        raise ValueError(f"Shopify media user errors: {media_user_errors}")
+
 def move_folder_to_listed(folder_name: str) -> None:
     """Moves all blobs under folder_name/ to listed/folder_name/."""
     source_prefix = f"{folder_name}/"
@@ -206,6 +276,7 @@ async def process_folder_listing(folder_name: str) -> dict:
     image_paths = get_image_paths_for_folder(folder_name)
     if not image_paths:
         raise ValueError("No images found in that folder.")
+    video_paths = get_video_paths_for_folder(folder_name)
 
     print(f"Found {len(image_paths)} images for folder '{folder_name}': {image_paths}")
     data = await analyze_images_via_vlm(image_paths, generate_dummy=False)
@@ -227,6 +298,9 @@ async def process_folder_listing(folder_name: str) -> dict:
 
     print(f"✅ Shopify save successful for folder '{folder_name}'.")
     print(f"Shopify product id: {new_product.id}")
+    if video_paths:
+        upload_videos_to_shopify(new_product.id, video_paths)
+        print(f"Uploaded {len(video_paths)} .mov file(s) to Shopify product media.")
 
     move_folder_to_listed(folder_name)
     msg = f"✅ Published: {data['title']} ({data['brand']}) as a draft."
