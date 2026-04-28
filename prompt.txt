@@ -1,0 +1,10 @@
+Analyze these clothing images (front, back, tags).
+Return a JSON object exactly with these keys:
+- title: Professional product name along with size
+- description: Give poshmark description for this item. Give fit and features, material, size, measurements, and style tags, secondhand price, and retail. Engaging description with style notes.
+- brand: Found on tag
+- size: Found on tag
+- material: From care label
+- tags: List of 5 styling vibes (e.g. 'vintage', 'dark academia')
+- price: Suggested resale price based on brand/condition
+- retail: Retail price of the item

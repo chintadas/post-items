@@ -31,6 +31,23 @@ PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 API_AUTH_KEY = os.getenv("API_AUTH_KEY") # Shared secret with your iPhone
 
+DEFAULT_LISTING_PROMPT = """
+Analyze these clothing images (front, back, tags).
+Return a JSON object exactly with these keys:
+- title: Professional product name along with size
+- description: Give poshmark description for this item. Give fit and features, material, size, measurements, and style tags, secondhand price, and retail. Engaging description with style notes.
+- brand: Found on tag
+- size: Found on tag
+- material: From care label
+- tags: List of 5 styling vibes (e.g. 'vintage', 'dark academia')
+- price: Suggested resale price based on brand/condition
+- retail: Retail price of the item
+"""
+
+class PromptExperimentRequest(BaseModel):
+    folder_name: str
+    prompt: str
+
 def validate_required_config() -> None:
     """Fail fast with a clear message when required config is missing."""
     required_config = {
@@ -118,7 +135,11 @@ def send_pushover(message: str):
     }
     requests.post(url, data=data)
 
-async def analyze_images_via_vlm(gcs_paths: List[str], generate_dummy: bool = False):
+async def analyze_images_via_vlm(
+    gcs_paths: List[str],
+    generate_dummy: bool = False,
+    prompt_override: str | None = None,
+):
     """Sends GCS image paths to Gemini for structured listing data."""
     if generate_dummy:
         return {
@@ -131,17 +152,7 @@ async def analyze_images_via_vlm(gcs_paths: List[str], generate_dummy: bool = Fa
             "price": "49.99"
         }
 
-    prompt = """
-    Analyze these clothing images (front, back, tags). 
-    Return a JSON object exactly with these keys:
-    - title: Professional product name
-    - description: Engaging description with style notes
-    - brand: Found on tag
-    - size: Found on tag
-    - material: From care label
-    - tags: List of 5 styling vibes (e.g. 'vintage', 'dark academia')
-    - price: Suggested resale price based on brand/condition
-    """
+    prompt = prompt_override.strip() if prompt_override else DEFAULT_LISTING_PROMPT
     
     # Construct parts for the model
     contents = [prompt]
@@ -222,6 +233,25 @@ async def process_folder_listing(folder_name: str) -> dict:
     send_pushover(msg)
     return {"status": "success", "product_id": new_product.id, "title": data["title"]}
 
+async def preview_folder_listing_data(folder_name: str, prompt: str) -> dict:
+    """Runs prompt + images through Gemini and returns parsed listing JSON only."""
+    image_paths = get_image_paths_for_folder(folder_name)
+    if not image_paths:
+        raise ValueError("No images found in that folder.")
+
+    print(f"Previewing LLM output for folder '{folder_name}' with {len(image_paths)} images.")
+    data = await analyze_images_via_vlm(
+        image_paths,
+        generate_dummy=False,
+        prompt_override=prompt,
+    )
+    return {
+        "status": "success",
+        "folder_name": folder_name,
+        "image_count": len(image_paths),
+        "product_data": data,
+    }
+
 # --- API Endpoints ---
 
 @app.post("/list-item/{folder_name}")
@@ -272,6 +302,22 @@ async def list_all_items(x_api_key: str = Header(None)):
         "failed": len(folders) - success_count,
         "results": results,
     }
+
+@app.post("/preview-listing")
+async def preview_listing(payload: PromptExperimentRequest, x_api_key: str = Header(None)):
+    # 1. Simple Auth Check
+    if x_api_key != API_AUTH_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    try:
+        return await preview_folder_listing_data(
+            folder_name=payload.folder_name,
+            prompt=payload.prompt,
+        )
+    except Exception as e:
+        print(f"Error previewing folder {payload.folder_name}: {e}")
+        print(traceback.format_exc())
+        return {"status": "error", "error_msg": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
