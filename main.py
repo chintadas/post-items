@@ -247,6 +247,95 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
     if media_user_errors:
         raise ValueError(f"Shopify media user errors: {media_user_errors}")
 
+def publish_product_to_all_channels(product_id: int) -> int:
+    """Publishes a product to all available Shopify sales channels."""
+    access_token = fetch_shopify_access_token()
+    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
+    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
+    product_gid = f"gid://shopify/Product/{product_id}"
+
+    publications_query = """
+    query GetPublications {
+      publications(first: 250) {
+        nodes {
+          id
+          name
+        }
+      }
+    }
+    """
+    query_response = requests.post(
+        graphql_url,
+        headers={
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": access_token,
+        },
+        json={"query": publications_query},
+        timeout=30,
+    )
+    query_response.raise_for_status()
+    query_payload = query_response.json()
+    if query_payload.get("errors"):
+        raise ValueError(f"Shopify publication query errors: {query_payload['errors']}")
+
+    publications = query_payload.get("data", {}).get("publications", {}).get("nodes", [])
+    publication_ids = [publication.get("id") for publication in publications if publication.get("id")]
+    if not publication_ids:
+        print("No Shopify publications found; skipping channel publishing.")
+        return 0
+
+    publish_mutation = """
+    mutation PublishToChannels($id: ID!, $input: [PublicationInput!]!) {
+      publishablePublish(id: $id, input: $input) {
+        publishable {
+          availablePublicationsCount {
+            count
+          }
+          resourcePublicationsCount {
+            count
+          }
+        }
+        shop {
+          id
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    publish_input = [{"publicationId": publication_id} for publication_id in publication_ids]
+    publish_response = requests.post(
+        graphql_url,
+        headers={
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": access_token,
+        },
+        json={
+            "query": publish_mutation,
+            "variables": {
+                "id": product_gid,
+                "input": publish_input,
+            },
+        },
+        timeout=30,
+    )
+    publish_response.raise_for_status()
+    publish_payload = publish_response.json()
+    if publish_payload.get("errors"):
+        raise ValueError(f"Shopify publish mutation errors: {publish_payload['errors']}")
+
+    user_errors = (
+        publish_payload.get("data", {})
+        .get("publishablePublish", {})
+        .get("userErrors", [])
+    )
+    if user_errors:
+        raise ValueError(f"Shopify publish user errors: {user_errors}")
+
+    return len(publication_ids)
+
 def move_folder_to_listed(folder_name: str) -> None:
     """Moves all blobs under folder_name/ to listed/folder_name/."""
     source_prefix = f"{folder_name}/"
@@ -298,6 +387,11 @@ async def process_folder_listing(folder_name: str) -> dict:
 
     print(f"✅ Shopify save successful for folder '{folder_name}'.")
     print(f"Shopify product id: {new_product.id}")
+
+    published_count = publish_product_to_all_channels(new_product.id)
+    if published_count:
+        print(f"Published product {new_product.id} to {published_count} Shopify channel(s).")
+
     if video_paths:
         upload_videos_to_shopify(new_product.id, video_paths)
         print(f"Uploaded {len(video_paths)} .mov file(s) to Shopify product media.")
