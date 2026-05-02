@@ -32,16 +32,24 @@ PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 API_AUTH_KEY = os.getenv("API_AUTH_KEY") # Shared secret with your iPhone
 
 DEFAULT_LISTING_PROMPT = """
-Analyze these clothing images (front, back, tags).
-Return a JSON object exactly with these keys:
-- title: Professional product name along with size
-- description: Give poshmark description for this item. Give fit and features, material, size, measurements, and style tags, secondhand price, and retail. Engaging description with style notes.
-- brand: Found on tag
-- size: Found on tag
-- material: From care label
-- tags: List of 5 styling vibes (e.g. 'vintage', 'dark academia')
-- price: Suggested resale price based on brand/condition
-- retail: Retail price of the item
+Analyze these clothing images (front, back, and tags).
+
+Return exactly one valid JSON object with exactly these keys (no extras):
+- title: Professional product name including size.
+- description: Brief Shopify-ready item description using HTML tags only for formatting. Do not use Markdown.
+- brand: Found on tag.
+- size: Found on tag.
+- measurements: based on size. use html tags if needed.
+- material: From care label.
+- fit_and_features: brief and use html tags if needed.
+- style_notes: brief and use html tags if needed.
+- tags: Array of 5 styling vibes (for example: "vintage", "dark academia").
+- price: Suggested resale price based on brand and condition.
+- retail: Retail price of the item.
+
+Output requirements:
+- Return JSON only (no prose, no code fences).
+- Ensure the JSON is parseable.
 """
 
 class PromptExperimentRequest(BaseModel):
@@ -373,12 +381,28 @@ async def process_folder_listing(folder_name: str) -> dict:
     activate_shopify_session_with_fresh_token()
     new_product = shopify.Product()
     new_product.title = data["title"]
-    new_product.body_html = f"<p>{data['description']}</p><p><b>Material:</b> {data['material']}</p>"
+    body_sections = [
+        f"<div>{data['description']}</div>",
+        f"<p><strong>Size:</strong> {data['size']}</p>",
+        f"<p><strong>Measurements:</strong> {data['measurements']}</p>",
+        f"<p><strong>Material:</strong> {data['material']}</p>",
+        f"<div><strong>Fit & Features:</strong> {data['fit_and_features']}</div>",
+        f"<div><strong>Style Notes:</strong> {data['style_notes']}</div>",
+    ]
+    new_product.body_html = "".join(body_sections)
     new_product.vendor = data["brand"]
     new_product.tags = ",".join(data["tags"])
     new_product.status = "draft"
 
-    variant = shopify.Variant({"price": data["price"], "option1": data["size"]})
+    variant = shopify.Variant(
+        {
+            "price": data["price"],
+            "option1": data["size"],
+            "inventory_management": "shopify",
+            "inventory_policy": "deny",
+            "inventory_quantity": 1,
+        }
+    )
     new_product.variants = [variant]
     new_product.images = [{"src": generate_signed_url(path)} for path in image_paths]
 

@@ -1,10 +1,18 @@
-Analyze these clothing images (front, back, tags).
-Return a JSON object exactly with these keys:
-- title: Professional product name along with size
-- description: Give poshmark description for this item. Give fit and features, material, size, measurements, and style tags, secondhand price, and retail. Engaging description with style notes.
-- brand: Found on tag
-- size: Found on tag
-- material: From care label
-- tags: List of 5 styling vibes (e.g. 'vintage', 'dark academia')
-- price: Suggested resale price based on brand/condition
-- retail: Retail price of the item
+Analyze these clothing images (front, back, and tags).
+
+Return exactly one valid JSON object with exactly these keys (no extras):
+- title: Professional product name including size.
+- description: Brief Shopify-ready item description using HTML tags only for formatting. Do not use Markdown.
+- brand: Found on tag.
+- size: Found on tag.
+- measurements: based on size. use html tags if needed.
+- material: From care label.
+- fit_and_features: brief and use html tags if needed.
+- style_notes: brief and use html tags if needed.
+- tags: Array of 5 styling vibes (for example: "vintage", "dark academia").
+- price: Suggested resale price based on brand and condition.
+- retail: Retail price of the item.
+
+Output requirements:
+- Return JSON only (no prose, no code fences).
+- Ensure the JSON is parseable.

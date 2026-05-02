@@ -7,6 +7,18 @@ import requests
 from dotenv import load_dotenv
 
 
+def build_body_html(product_data: dict) -> str:
+    body_sections = [
+        f"<div>{product_data.get('description', '')}</div>",
+        f"<p><strong>Size:</strong> {product_data.get('size', '')}</p>",
+        f"<p><strong>Measurements:</strong> {product_data.get('measurements', '')}</p>",
+        f"<p><strong>Material:</strong> {product_data.get('material', '')}</p>",
+        f"<div><strong>Fit & Features:</strong> {product_data.get('fit_and_features', '')}</div>",
+        f"<div><strong>Style Notes:</strong> {product_data.get('style_notes', '')}</div>",
+    ]
+    return "".join(body_sections)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Preview LLM product JSON for a folder without posting to Shopify.",
@@ -111,6 +123,13 @@ def main() -> int:
         output = response_json.get("product_data", {})
     else:
         output = response_json
+
+    if response_json.get("status") == "success":
+        product_data = response_json.get("product_data", {})
+        body_html = build_body_html(product_data)
+        preview_path = os.path.join(os.path.dirname(__file__), "description_preview.md")
+        with open(preview_path, "w", encoding="utf-8") as handle:
+            handle.write(body_html)
 
     print(json.dumps(output, indent=2, ensure_ascii=True))
     return 0
