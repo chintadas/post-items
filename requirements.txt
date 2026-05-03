@@ -5,3 +5,4 @@ google-genai
 shopifyapi
 python-dotenv
 requests
+Pillow

@@ -6,6 +6,8 @@ import requests
 from urllib.parse import urlparse
 from datetime import timedelta
 from typing import List
+import io
+from PIL import Image
 
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
@@ -85,6 +87,43 @@ bucket = storage_client.bucket(GCS_BUCKET_NAME)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # --- Helper Functions ---
+
+def ensure_image_size_limit(blob_name: str, max_megapixels: float = 19.5) -> None:
+    """
+    Downloads image from GCS, strips all hidden metadata (including MPO formats),
+    resizes if it exceeds max_megapixels, and overwrites the blob in GCS.
+    """
+    blob = bucket.blob(blob_name)
+    image_data = blob.download_as_bytes()
+    
+    with Image.open(io.BytesIO(image_data)) as img:
+        width, height = img.size
+        megapixels = (width * height) / 1_000_000
+        
+        # Unconditionally create a brand new clean image to strip ALL hidden metadata/MPO layers
+        clean_img = Image.new("RGB", img.size)
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            clean_img.paste(img.convert("RGBA"), mask=img.convert("RGBA"))
+        else:
+            clean_img.paste(img)
+            
+        target_img = clean_img
+        
+        if megapixels > max_megapixels:
+            scale_factor = (max_megapixels / megapixels) ** 0.5
+            new_width = int(width * scale_factor)
+            new_height = int(height * scale_factor)
+            print(f"Resizing {blob_name} from {width}x{height} ({megapixels:.1f}MP) to {new_width}x{new_height}")
+            target_img = clean_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        else:
+            print(f"Cleaning metadata from {blob_name} to ensure pure JPEG")
+            
+        output_buffer = io.BytesIO()
+        target_img.save(output_buffer, format="JPEG", quality=85)
+        
+        # Upload back to GCS
+        blob.upload_from_string(output_buffer.getvalue(), content_type="image/jpeg")
+        print(f"✅ Successfully cleaned and updated {blob_name} in GCS.")
 
 def get_shop_domain(shop_url: str) -> str:
     """Normalizes SHOPIFY_SHOP_URL into a bare shop domain."""
@@ -432,10 +471,30 @@ async def process_folder_listing(folder_name: str) -> dict:
         }
     )
     new_product.variants = [variant]
-    new_product.images = [{"src": generate_signed_url(path)} for path in image_paths]
 
     if not new_product.save():
         raise Exception("Failed to save to Shopify")
+
+    # Add images sequentially after product creation
+    # Attempting to add many images in the initial product.save() 
+    # can cause silent failures or dropped images.
+    for path in image_paths:
+        try:
+            ensure_image_size_limit(path)
+        except Exception as e:
+            print(f"⚠️ Error checking/resizing image {path}: {e}")
+
+        img = shopify.Image()
+        img.product_id = new_product.id
+        
+        import time
+        # Append a timestamp to the URL to bust Shopify's aggressive cache
+        img.src = f"{generate_signed_url(path)}&_bust={int(time.time())}"
+        if not img.save():
+            errors = img.errors.full_messages() if hasattr(img, "errors") else "Unknown error"
+            print(f"⚠️ Failed to attach image {path} to product {new_product.id}. Errors: {errors}")
+        else:
+            print(f"Attached image {path} to product {new_product.id}")
 
     print(f"✅ Shopify save successful for folder '{folder_name}'.")
     print(f"Shopify product id: {new_product.id}")
