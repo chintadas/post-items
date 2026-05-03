@@ -246,24 +246,86 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
     product_gid = f"gid://shopify/Product/{product_id}"
 
     media_inputs = []
+    
+    staged_upload_mutation = """
+    mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+      stagedUploadsCreate(input: $input) {
+        stagedTargets {
+          url
+          resourceUrl
+          parameters {
+            name
+            value
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+
     for path in video_paths:
+        filename = os.path.basename(path)
+        mime_type = "video/quicktime" if filename.lower().endswith(".mov") else "video/mp4"
+        
+        print(f"Downloading video from GCS for staging: {path}")
+        blob = bucket.blob(path)
+        video_bytes = blob.download_as_bytes()
+        file_size_str = str(len(video_bytes))
+        
+        # 1. Request staging URL
+        stage_response = requests.post(
+            graphql_url,
+            headers={
+                "Content-Type": "application/json",
+                "X-Shopify-Access-Token": access_token,
+            },
+            json={
+                "query": staged_upload_mutation,
+                "variables": {
+                    "input": [{
+                        "resource": "VIDEO",
+                        "filename": filename,
+                        "mimeType": mime_type,
+                        "fileSize": file_size_str,
+                        "httpMethod": "POST"
+                    }]
+                }
+            },
+            timeout=30,
+        )
+        stage_response.raise_for_status()
+        stage_payload = stage_response.json()
+        
+        if stage_payload.get("errors"):
+            raise ValueError(f"GraphQL errors requesting staged upload: {stage_payload['errors']}")
+            
+        stage_data = stage_payload.get("data", {}).get("stagedUploadsCreate", {})
+        if stage_data.get("userErrors"):
+            raise ValueError(f"Staged upload user errors: {stage_data['userErrors']}")
+            
+        target = stage_data["stagedTargets"][0]
+        upload_url = target["url"]
+        resource_url = target["resourceUrl"]
+        parameters = {p["name"]: p["value"] for p in target["parameters"]}
+        
+        print(f"Uploading video to Shopify staging ({len(video_bytes)} bytes)...")
+        # 2. Upload file to staging URL
+        files = {"file": (filename, video_bytes, mime_type)}
+        upload_response = requests.post(upload_url, data=parameters, files=files, timeout=120)
+        upload_response.raise_for_status()
+        
+        print(f"✅ Staged video successfully: {resource_url}")
+        
+        # 3. Add to media inputs for productCreateMedia
         media_inputs.append(
             {
                 "mediaContentType": "VIDEO",
-                "originalSource": generate_signed_url(path),
+                "originalSource": resource_url,
             }
         )
-
-    print(
-        "Uploading Shopify videos with sources: "
-        + json.dumps(
-            [
-                {"blob_path": path, "originalSource": media_inputs[idx]["originalSource"]}
-                for idx, path in enumerate(video_paths)
-            ],
-            ensure_ascii=True,
-        )
-    )
 
     mutation = """
     mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) {
@@ -585,12 +647,20 @@ async def process_folder_listing(folder_name: str) -> dict:
         print(f"Published product {new_product.id} to {published_count} Shopify channel(s).")
 
     if video_paths:
-        # upload_videos_to_shopify(new_product.id, video_paths)
-        # print(f"Uploaded {len(video_paths)} .mov file(s) to Shopify product media.")
-        print(f"Uploading disabled for now. {len(video_paths)} .mov file(s) to Shopify product media.")
+        try:
+            print(f"Attempting to upload {len(video_paths)} video(s) to Shopify...")
+            upload_videos_to_shopify(new_product.id, video_paths)
+            print(f"✅ Successfully uploaded {len(video_paths)} video(s) to Shopify product media.")
+        except Exception as e:
+            print(f"⚠️ ERROR: Failed to upload videos to Shopify: {e}")
+            import traceback
+            traceback.print_exc()
 
     move_folder_to_listed(folder_name)
-    msg = f"✅ Published: {data['title']} ({data['brand']}) as a draft."
+    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
+    store_name = shop_domain.split(".")[0]
+    admin_url = f"https://admin.shopify.com/store/{store_name}/products/{new_product.id}"
+    msg = f"✅ Published: {data['title']} ({data['brand']}) as a draft.\n{admin_url}"
     send_pushover(msg)
     return {"status": "success", "product_id": new_product.id, "title": data["title"]}
 
