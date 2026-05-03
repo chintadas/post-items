@@ -163,14 +163,19 @@ def activate_shopify_session_with_fresh_token() -> None:
     session = shopify.Session(get_shop_domain(SHOPIFY_SHOP_URL), SHOPIFY_API_VERSION, access_token)
     shopify.ShopifyResource.activate_session(session)
 
-def generate_signed_url(blob_name: str):
+def generate_signed_url(blob_name: str, bust_cache: bool = False):
     """Generates a 15-minute temporary link for Shopify to fetch the image."""
     blob = bucket.blob(blob_name)
-    return blob.generate_signed_url(
-        version="v4",
-        expiration=timedelta(minutes=15),
-        method="GET",
-    )
+    kwargs = {
+        "version": "v4",
+        "expiration": timedelta(minutes=15),
+        "method": "GET",
+    }
+    if bust_cache:
+        import time
+        kwargs["query_parameters"] = {"_bust": str(int(time.time()))}
+        
+    return blob.generate_signed_url(**kwargs)
 
 def send_pushover(message: str):
     """Sends a push notification to your iPhone."""
@@ -410,6 +415,69 @@ def publish_product_to_all_channels(product_id: int) -> int:
 
     return len(publication_ids)
 
+def set_inventory_quantity(inventory_item_id: int, quantity: int = 1) -> None:
+    """Sets the available inventory quantity using the inventorySetQuantities GraphQL mutation."""
+    access_token = fetch_shopify_access_token()
+    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
+    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
+    
+    # Fetch first active location using python shopify API
+    locations = shopify.Location.find()
+    if not locations:
+        print("No locations found to set inventory.")
+        return
+        
+    location_gid = f"gid://shopify/Location/{locations[0].id}"
+    inventory_item_gid = f"gid://shopify/InventoryItem/{inventory_item_id}"
+    
+    import uuid
+    idempotency_key = str(uuid.uuid4())
+    
+    mutation = f"""
+    mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {{
+      inventorySetQuantities(input: $input) @idempotent(key: "{idempotency_key}") {{
+        userErrors {{
+          field
+          message
+        }}
+      }}
+    }}
+    """
+    
+    variables = {
+        "input": {
+            "name": "available",
+            "reason": "correction",
+            "quantities": [
+                {
+                    "inventoryItemId": inventory_item_gid,
+                    "locationId": location_gid,
+                    "quantity": quantity,
+                    "changeFromQuantity": 0
+                }
+            ]
+        }
+    }
+    
+    response = requests.post(
+        graphql_url,
+        headers={
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": access_token,
+        },
+        json={"query": mutation, "variables": variables},
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    
+    if payload.get("errors"):
+        raise ValueError(f"GraphQL errors setting inventory: {payload['errors']}")
+        
+    user_errors = payload.get("data", {}).get("inventorySetQuantities", {}).get("userErrors", [])
+    if user_errors:
+        raise ValueError(f"Inventory user errors: {user_errors}")
+
 def move_folder_to_listed(folder_name: str) -> None:
     """Moves all blobs under folder_name/ to listed/folder_name/."""
     source_prefix = f"{folder_name}/"
@@ -455,7 +523,7 @@ async def process_folder_listing(folder_name: str) -> dict:
     ]
     
     if data.get("retail"):
-        body_sections.append(f"<p><strong>Retails for:</strong> ${data['retail']}</p>")
+        body_sections.append(f"<p><strong>Retails for:</strong> {data['retail']}</p>")
         
     body_sections.extend([
         f"<div><strong>Fit & Features:</strong> {data['fit_and_features']}</div>",
@@ -466,20 +534,28 @@ async def process_folder_listing(folder_name: str) -> dict:
     new_product.vendor = data["brand"]
     new_product.tags = ",".join(data["tags"])
     new_product.status = "draft"
+    new_product.options = [{"name": "Size"}]
 
     variant = shopify.Variant(
         {
             "price": data["price"],
             "option1": data["size"],
             "inventory_management": "shopify",
-            "inventory_policy": "deny",
-            "inventory_quantity": 1,
         }
     )
     new_product.variants = [variant]
 
     if not new_product.save():
         raise Exception("Failed to save to Shopify")
+
+    # Setting inventory_quantity directly on the variant is deprecated in newer APIs,
+    # so we explicitly set it using the GraphQL mutation.
+    if new_product.variants and getattr(new_product.variants[0], "inventory_item_id", None):
+        try:
+            set_inventory_quantity(new_product.variants[0].inventory_item_id, 1)
+            print("Set inventory quantity to 1 for variant.")
+        except Exception as e:
+            print(f"⚠️ Failed to set inventory quantity: {e}")
 
     # Add images sequentially after product creation
     # Attempting to add many images in the initial product.save() 
@@ -493,9 +569,8 @@ async def process_folder_listing(folder_name: str) -> dict:
         img = shopify.Image()
         img.product_id = new_product.id
         
-        import time
-        # Append a timestamp to the URL to bust Shopify's aggressive cache
-        img.src = f"{generate_signed_url(path)}&_bust={int(time.time())}"
+        # Pass bust_cache=True so the cache-busting timestamp is properly signed by GCS
+        img.src = generate_signed_url(path, bust_cache=True)
         if not img.save():
             errors = img.errors.full_messages() if hasattr(img, "errors") else "Unknown error"
             print(f"⚠️ Failed to attach image {path} to product {new_product.id}. Errors: {errors}")
