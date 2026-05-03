@@ -2,7 +2,7 @@ Analyze these clothing images (front, back, and tags).
 
 Return exactly one valid JSON object with exactly these keys (no extras):
 - title: Professional product name including size.
-- description: Brief Shopify-ready item description using HTML tags only for formatting. Do not use Markdown.
+- description: Shopify-ready item description using HTML tags only for formatting. Do not use Markdown. Maximum 2 sentences
 - brand: Found on tag.
 - size: Found on tag.
 - measurements: based on size. use html tags if needed.

@@ -36,7 +36,7 @@ Analyze these clothing images (front, back, and tags).
 
 Return exactly one valid JSON object with exactly these keys (no extras):
 - title: Professional product name including size.
-- description: Brief Shopify-ready item description using HTML tags only for formatting. Do not use Markdown.
+- description: Shopify-ready item description using HTML tags only for formatting. Do not use Markdown. Maximum 2 sentences
 - brand: Found on tag.
 - size: Found on tag.
 - measurements: based on size. use html tags if needed.
@@ -201,13 +201,25 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
     graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     product_gid = f"gid://shopify/Product/{product_id}"
 
-    media_inputs = [
-        {
-            "mediaContentType": "VIDEO",
-            "originalSource": generate_signed_url(path),
-        }
-        for path in video_paths
-    ]
+    media_inputs = []
+    for path in video_paths:
+        media_inputs.append(
+            {
+                "mediaContentType": "VIDEO",
+                "originalSource": generate_signed_url(path),
+            }
+        )
+
+    print(
+        "Uploading Shopify videos with sources: "
+        + json.dumps(
+            [
+                {"blob_path": path, "originalSource": media_inputs[idx]["originalSource"]}
+                for idx, path in enumerate(video_paths)
+            ],
+            ensure_ascii=True,
+        )
+    )
 
     mutation = """
     mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) {
@@ -248,11 +260,26 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
 
     errors = payload.get("errors")
     if errors:
+        print(f"Shopify GraphQL top-level errors: {json.dumps(errors, ensure_ascii=True)}")
+        print(f"Shopify raw productCreateMedia payload: {json.dumps(payload, ensure_ascii=True)}")
         raise ValueError(f"Shopify GraphQL errors: {errors}")
 
     media_result = payload.get("data", {}).get("productCreateMedia", {})
     media_user_errors = media_result.get("mediaUserErrors", [])
     if media_user_errors:
+        print(f"Shopify mediaUserErrors: {json.dumps(media_user_errors, ensure_ascii=True)}")
+        print(
+            "Shopify productCreateMedia debug context: "
+            + json.dumps(
+                {
+                    "product_gid": product_gid,
+                    "video_paths": video_paths,
+                    "media_inputs": media_inputs,
+                    "media_response": media_result.get("media", []),
+                },
+                ensure_ascii=True,
+            )
+        )
         raise ValueError(f"Shopify media user errors: {media_user_errors}")
 
 def publish_product_to_all_channels(product_id: int) -> int:
@@ -388,6 +415,7 @@ async def process_folder_listing(folder_name: str) -> dict:
         f"<p><strong>Material:</strong> {data['material']}</p>",
         f"<div><strong>Fit & Features:</strong> {data['fit_and_features']}</div>",
         f"<div><strong>Style Notes:</strong> {data['style_notes']}</div>",
+        f"<p>Usually ships within 24 hours.</p>"
     ]
     new_product.body_html = "".join(body_sections)
     new_product.vendor = data["brand"]
@@ -417,8 +445,9 @@ async def process_folder_listing(folder_name: str) -> dict:
         print(f"Published product {new_product.id} to {published_count} Shopify channel(s).")
 
     if video_paths:
-        upload_videos_to_shopify(new_product.id, video_paths)
-        print(f"Uploaded {len(video_paths)} .mov file(s) to Shopify product media.")
+        # upload_videos_to_shopify(new_product.id, video_paths)
+        # print(f"Uploaded {len(video_paths)} .mov file(s) to Shopify product media.")
+        print(f"Uploading disabled for now. {len(video_paths)} .mov file(s) to Shopify product media.")
 
     move_folder_to_listed(folder_name)
     msg = f"✅ Published: {data['title']} ({data['brand']}) as a draft."
