@@ -452,10 +452,16 @@ async def process_folder_listing(folder_name: str) -> dict:
         f"<p><strong>Size:</strong> {data['size']}</p>",
         f"<p><strong>Measurements:</strong> {data['measurements']}</p>",
         f"<p><strong>Material:</strong> {data['material']}</p>",
+    ]
+    
+    if data.get("retail"):
+        body_sections.append(f"<p><strong>Retails for:</strong> ${data['retail']}</p>")
+        
+    body_sections.extend([
         f"<div><strong>Fit & Features:</strong> {data['fit_and_features']}</div>",
         f"<div><strong>Style Notes:</strong> {data['style_notes']}</div>",
         f"<div class='usually-ships'>Usually ships within 24 hours.</div>"
-    ]
+    ])
     new_product.body_html = "".join(body_sections)
     new_product.vendor = data["brand"]
     new_product.tags = ",".join(data["tags"])
