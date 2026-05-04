@@ -16,3 +16,4 @@ Return exactly one valid JSON object with exactly these keys (no extras):
 Output requirements:
 - Return JSON only (no prose, no code fences).
 - Ensure the JSON is parseable.
+- IMPORTANT: Use raw HTML tags (e.g. <p>, <ul>, <li>). Do NOT use HTML entities or escaped characters like &lt; or &gt;.
