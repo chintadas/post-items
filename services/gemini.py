@@ -52,7 +52,7 @@ async def analyze_images_via_vlm(
         contents.append(types.Part.from_bytes(mime_type="image/jpeg", data=bucket.blob(path).download_as_bytes()))
         print(f"Added image for analysis: {path}")
     
-    response = client.models.generate_content(model="gemini-2.5-flash", contents=contents)
+    response = client.models.generate_content(model="gemini-flash-latest", contents=contents)
     print(f"Raw Gemini response: {response.text}")
     # Strip any markdown formatting Gemini might add
     clean_json = response.text.replace('```json', '').replace('```', '').strip()

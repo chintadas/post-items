@@ -2,7 +2,7 @@ import io
 import os
 from typing import List
 from datetime import timedelta
-from PIL import Image
+from PIL import Image, ImageOps
 from google.cloud import storage
 from config import GCS_BUCKET_NAME
 
@@ -18,6 +18,8 @@ def ensure_image_size_limit(blob_name: str, max_megapixels: float = 19.5) -> Non
     image_data = blob.download_as_bytes()
     
     with Image.open(io.BytesIO(image_data)) as img:
+        # Apply any EXIF rotation physically to the pixels before stripping metadata
+        img = ImageOps.exif_transpose(img)
         width, height = img.size
         megapixels = (width * height) / 1_000_000
         
