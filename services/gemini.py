@@ -12,15 +12,15 @@ Analyze these clothing images (front, back, and tags).
 
 Return exactly one valid JSON object with exactly these keys (no extras):
 - title: Professional product name including size.
-- description: Shopify-ready item description using HTML tags only for formatting. Do not use Markdown. Maximum 2 sentences
+- description: Shopify-ready item description. Use simple HTML like <div> or <br> for breaks, but keep the content "plain-text friendly" (use '-' for bullets instead of <ul>). Maximum 2 sentences.
 - brand: Found on tag.
 - size: Found on tag.
-- measurements: based on size. use html tags if needed.
+- measurements: based on size. Use simple <br> for line breaks.
 - material: From care label.
 - target_gender: Female, Male, or Unisex.
 - product_category: Shopify product category based on image, description and type of product. Example: Apparel & Accessories > Clothing > Clothing Tops.
-- fit_and_features: brief and use html tags if needed.
-- style_notes: brief and use html tags if needed.
+- fit_and_features: brief, use simple '-' for bullets and <br> for breaks.
+- style_notes: brief, use simple '-' for bullets and <br> for breaks.
 - tags: Array of 5 styling vibes (for example: "vintage", "dark academia").
 - price: Suggested resale price based on brand and condition.
 - retail: Retail price of the item.
@@ -28,7 +28,7 @@ Return exactly one valid JSON object with exactly these keys (no extras):
 Output requirements:
 - Return JSON only (no prose, no code fences).
 - Ensure the JSON is parseable.
-- IMPORTANT: Use raw HTML tags (e.g. <p>, <ul>, <li>). Do NOT use HTML entities or escaped characters like &lt; or &gt;.
+- IMPORTANT: Use simple HTML tags (e.g. <div>, <br>). Avoid complex nested tags like <ul> or <li> to ensure formatting is preserved when cross-listing to plain-text platforms like Poshmark.
 """
 async def analyze_images_via_vlm(
     gcs_paths: List[str],
