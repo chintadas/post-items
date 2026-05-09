@@ -21,6 +21,7 @@ from services.shopify import (
     publish_product_to_all_channels,
     get_shop_domain,
     update_product_category,
+    set_category_metafields,
 )
 from services.notifications import send_pushover
 
@@ -86,11 +87,12 @@ async def process_folder_listing(folder_name: str) -> dict:
             print(f"⚠️ Failed to set inventory quantity: {e}")
 
     # Set the Shopify product category (standardized taxonomy)
-    if data.get("product_category"):
         try:
             update_product_category(new_product.id, data["product_category"])
+            # After category is set, we can set the specific category metafields
+            set_category_metafields(new_product.id, data.get("target_gender"), data.get("size"))
         except Exception as e:
-            print(f"⚠️ Failed to set Shopify product category: {e}")
+            print(f"⚠️ Failed to set Shopify product category or metafields: {e}")
 
     # Add images sequentially after product creation
     # Attempting to add many images in the initial product.save() 

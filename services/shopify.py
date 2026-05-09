@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import uuid
 import requests
@@ -473,3 +474,199 @@ def update_product_category(product_id: int, category_string: str) -> None:
         print(f"⚠️ Shopify category update failed: {user_errors}")
     else:
         print(f"✅ Successfully set Shopify product category for product {product_id}")
+
+def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
+    """
+    Resolves a Shopify Metaobject GID by searching for its display name or handle.
+    Example: resolve_metaobject_gid('shopify--target-gender', 'Female')
+    """
+    if not search_value:
+        return None
+
+    access_token = fetch_shopify_access_token()
+    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
+    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
+
+    # We query for all metaobjects of this type and do a case-insensitive match.
+    # Standard taxonomy metaobjects are usually few enough to fetch in one go (or first 100).
+    query = """
+    query GetMetaobjects($type: String!) {
+      metaobjects(type: $type, first: 100) {
+        nodes {
+          id
+          handle
+          displayName
+        }
+      }
+    }
+    """
+    
+    resp = requests.post(
+        graphql_url,
+        headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
+        json={"query": query, "variables": {"type": type_name}},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    
+    if payload.get("errors"):
+        print(f"⚠️ Error resolving metaobject for {type_name}: {payload['errors']}")
+        return None
+        
+    nodes = payload.get("data", {}).get("metaobjects", {}).get("nodes", [])
+    if not nodes:
+        print(f"⚠️ No metaobjects found for type {type_name}. Ensure they are 'activated' in Shopify Admin.")
+        return None
+
+    search_lower = search_value.lower()
+    
+    # Normalization for common search terms
+    normalized_searches = [search_lower]
+    if type_name == "shopify--size":
+        # Handle X -> XL mapping (e.g. 3X -> 3XL)
+        x_match = re.match(r'^([1-9])x$', search_lower)
+        if x_match:
+            digit = x_match.group(1)
+            normalized_searches.append(f"{digit}xl")
+        
+        # Specific common overrides
+        overrides = {
+            "1x": ["xl", "1xl"],
+            "2x": ["2xl"],
+            "3x": ["3xl"],
+            "4x": ["4xl"],
+            "5x": ["5xl"],
+            "xl": ["1x", "1xl"],
+            "small": ["s"],
+            "medium": ["m"],
+            "large": ["l"],
+            "extra large": ["xl", "1xl"],
+        }
+        if search_lower in overrides:
+            for val in overrides[search_lower]:
+                if val not in normalized_searches:
+                    normalized_searches.append(val)
+    
+    for s in normalized_searches:
+        # Try exact match on displayName first
+        for node in nodes:
+            if node.get("displayName", "").lower() == s:
+                return node["id"]
+                
+        # Try match on handle
+        for node in nodes:
+            if node.get("handle", "").lower() == s:
+                return node["id"]
+                
+        # Try partial match on displayName
+        for node in nodes:
+            if s in node.get("displayName", "").lower():
+                return node["id"]
+
+    # If we got here, we failed to find a match. Log what WAS available.
+    available_names = [n.get("displayName") for n in nodes if n.get("displayName")]
+    print(f"⚠️ Could not resolve '{search_value}' (tried {normalized_searches}) for {type_name}.")
+    print(f"ℹ️ Available {type_name} in store: {', '.join(available_names[:20])}")
+    return None
+
+def set_category_metafields(product_id: int, gender: str, size: str) -> None:
+    """Sets the Shopify category metafields (e.g. Target Gender, Size) using the GraphQL API."""
+    if not gender and not size:
+        return
+
+    access_token = fetch_shopify_access_token()
+    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
+    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
+    product_gid = f"gid://shopify/Product/{product_id}"
+
+    metafields = []
+    
+    # 1. Resolve Gender Metaobject
+    if gender:
+        gender_gid = resolve_metaobject_gid("shopify--target-gender", gender)
+        if gender_gid:
+            # Standard Category Metafields like Target Gender are often list.metaobject_reference
+            # Note: The key is target-gender (hyphen), not target_gender (underscore)
+            metafields.append({
+                "ownerId": product_gid,
+                "namespace": "shopify",
+                "key": "target-gender",
+                "value": json.dumps([gender_gid]),
+                "type": "list.metaobject_reference"
+            })
+            print(f"✅ Resolved Gender '{gender}' to {gender_gid}")
+        else:
+            print(f"⚠️ Could not resolve GID for Gender: {gender}")
+
+    # 2. Resolve Size Metaobject
+    if size:
+        size_gid = resolve_metaobject_gid("shopify--size", size)
+        if size_gid:
+            metafields.append({
+                "ownerId": product_gid,
+                "namespace": "shopify",
+                "key": "size",
+                "value": json.dumps([size_gid]),
+                "type": "list.metaobject_reference"
+            })
+            print(f"✅ Resolved Size '{size}' to {size_gid}")
+        else:
+            print(f"⚠️ Could not resolve GID for Size: {size}")
+
+    if not metafields:
+        return
+
+    # Using productUpdate instead of metafieldsSet for potentially better access to shopify namespace
+    mutation = """
+    mutation productUpdate($input: ProductInput!) {
+      productUpdate(input: $input) {
+        product {
+          id
+          metafields(first: 10) {
+            nodes {
+              key
+              value
+            }
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    
+    # We need to format metafields for ProductInput which uses 'metafields' field
+    # ProductInput metafields don't need 'ownerId' inside each metafield object
+    product_metafields = []
+    for m in metafields:
+        product_metafields.append({
+            "namespace": m["namespace"],
+            "key": m["key"],
+            "value": m["value"],
+            "type": m["type"]
+        })
+
+    variables = {
+        "input": {
+            "id": product_gid,
+            "metafields": product_metafields
+        }
+    }
+
+    resp = requests.post(
+        graphql_url,
+        headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
+        json={"query": mutation, "variables": variables},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    
+    user_errors = payload.get("data", {}).get("productUpdate", {}).get("userErrors", [])
+    if user_errors:
+        print(f"⚠️ Category metafields set failed: {user_errors}")
+    else:
+        print(f"✅ Successfully updated category metafields for product {product_id}")
