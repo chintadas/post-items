@@ -357,3 +357,119 @@ def set_inventory_quantity(inventory_item_id: int, quantity: int = 1) -> None:
     if user_errors:
         raise ValueError(f"Inventory user errors: {user_errors}")
 
+def update_product_category(product_id: int, category_string: str) -> None:
+    """Sets the Shopify product category (taxonomy) using the modern 2026-04 GraphQL API."""
+    if not category_string:
+        return
+
+    access_token = fetch_shopify_access_token()
+    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
+    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
+    product_gid = f"gid://shopify/Product/{product_id}"
+
+    # 1. Fetch product details to use as search context
+    product_query = """
+    query GetProductDetails($id: ID!) {
+      product(id: $id) {
+        title
+      }
+    }
+    """
+    product_response = requests.post(
+        graphql_url,
+        headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
+        json={"query": product_query, "variables": {"id": product_gid}},
+        timeout=30,
+    )
+    product_response.raise_for_status()
+    title = product_response.json().get("data", {}).get("product", {}).get("title", "")
+
+    # 2. Resolve the category using the modern 'taxonomy' query
+    # We try the full breadcrumb, then the leaf category, then the product title.
+    taxonomy_query = """
+    query ResolveTaxonomy($search: String!) {
+      taxonomy {
+        categories(first: 1, search: $search) {
+          nodes {
+            id
+            fullName
+          }
+        }
+      }
+    }
+    """
+
+    def search_taxonomy(term):
+        if not term: return None
+        resp = requests.post(
+            graphql_url,
+            headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
+            json={"query": taxonomy_query, "variables": {"search": term}},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("errors"):
+            print(f"⚠️ Taxonomy query error for '{term}': {payload['errors']}")
+            return None
+        nodes = payload.get("data", {}).get("taxonomy", {}).get("categories", {}).get("nodes", [])
+        return nodes[0] if nodes else None
+
+    # Try 1: Full AI-generated breadcrumb
+    target_node = search_taxonomy(category_string)
+    
+    # Try 2: Leaf category name
+    if not target_node and " > " in category_string:
+        leaf = category_string.split(" > ")[-1].strip()
+        target_node = search_taxonomy(leaf)
+        
+    # Try 3: Product title
+    if not target_node:
+        target_node = search_taxonomy(title)
+
+    if not target_node:
+        print(f"⚠️ Failed to resolve Shopify taxonomy category for product {product_id} after all attempts.")
+        return
+
+    target_category_gid = target_node["id"]
+    print(f"✅ Resolved category: {target_node['fullName']} ({target_category_gid})")
+
+    # 3. Update the product with the new 'category' field (standardized in 2026-04)
+    update_mutation = """
+    mutation productUpdate($input: ProductInput!) {
+      productUpdate(input: $input) {
+        product {
+          id
+          category {
+            fullName
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    
+    update_variables = {
+        "input": {
+            "id": product_gid,
+            "category": target_category_gid
+        }
+    }
+    
+    update_response = requests.post(
+        graphql_url,
+        headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
+        json={"query": update_mutation, "variables": update_variables},
+        timeout=30,
+    )
+    update_response.raise_for_status()
+    update_payload = update_response.json()
+    
+    user_errors = update_payload.get("data", {}).get("productUpdate", {}).get("userErrors", [])
+    if user_errors:
+        print(f"⚠️ Shopify category update failed: {user_errors}")
+    else:
+        print(f"✅ Successfully set Shopify product category for product {product_id}")

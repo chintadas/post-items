@@ -17,6 +17,7 @@ Return exactly one valid JSON object with exactly these keys (no extras):
 - size: Found on tag.
 - measurements: based on size. use html tags if needed.
 - material: From care label.
+- product_category: Shopify product category based on image, description and type of product. Example: Apparel & Accessories > Clothing > Clothing Tops.
 - fit_and_features: brief and use html tags if needed.
 - style_notes: brief and use html tags if needed.
 - tags: Array of 5 styling vibes (for example: "vintage", "dark academia").

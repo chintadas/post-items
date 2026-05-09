@@ -20,6 +20,7 @@ from services.shopify import (
     upload_videos_to_shopify,
     publish_product_to_all_channels,
     get_shop_domain,
+    update_product_category,
 )
 from services.notifications import send_pushover
 
@@ -83,6 +84,13 @@ async def process_folder_listing(folder_name: str) -> dict:
             print("Set inventory quantity to 1 for variant.")
         except Exception as e:
             print(f"⚠️ Failed to set inventory quantity: {e}")
+
+    # Set the Shopify product category (standardized taxonomy)
+    if data.get("product_category"):
+        try:
+            update_product_category(new_product.id, data["product_category"])
+        except Exception as e:
+            print(f"⚠️ Failed to set Shopify product category: {e}")
 
     # Add images sequentially after product creation
     # Attempting to add many images in the initial product.save() 
