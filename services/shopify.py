@@ -47,9 +47,18 @@ def fetch_shopify_access_token() -> str:
         raise ValueError(f"No access_token in Shopify response: {token_payload}")
     return access_token
 
+_shopify_access_token = None
+
+def get_shopify_access_token(force_refresh: bool = False) -> str:
+    """Retrieves cached token or fetches a fresh one if not set or forced."""
+    global _shopify_access_token
+    if force_refresh or not _shopify_access_token:
+        _shopify_access_token = fetch_shopify_access_token()
+    return _shopify_access_token
+
 def activate_shopify_session_with_fresh_token() -> None:
     """Fetches a fresh access token and activates Shopify session."""
-    access_token = fetch_shopify_access_token()
+    access_token = get_shopify_access_token(force_refresh=True)
     session = shopify.Session(get_shop_domain(SHOPIFY_SHOP_URL), SHOPIFY_API_VERSION, access_token)
     shopify.ShopifyResource.activate_session(session)
 
@@ -58,7 +67,7 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
     if not video_paths:
         return
 
-    access_token = fetch_shopify_access_token()
+    access_token = get_shopify_access_token()
     shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
     graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     product_gid = f"gid://shopify/Product/{product_id}"
@@ -208,7 +217,7 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
 
 def publish_product_to_all_channels(product_id: int) -> int:
     """Publishes a product to all available Shopify sales channels."""
-    access_token = fetch_shopify_access_token()
+    access_token = get_shopify_access_token()
     shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
     graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     product_gid = f"gid://shopify/Product/{product_id}"
@@ -297,7 +306,7 @@ def publish_product_to_all_channels(product_id: int) -> int:
 
 def set_inventory_quantity(inventory_item_id: int, quantity: int = 1) -> None:
     """Sets the available inventory quantity using the inventorySetQuantities GraphQL mutation."""
-    access_token = fetch_shopify_access_token()
+    access_token = get_shopify_access_token()
     shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
     graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     
@@ -363,7 +372,7 @@ def update_product_category(product_id: int, category_string: str) -> None:
     if not category_string:
         return
 
-    access_token = fetch_shopify_access_token()
+    access_token = get_shopify_access_token()
     shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
     graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     product_gid = f"gid://shopify/Product/{product_id}"
@@ -483,7 +492,7 @@ def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
     if not search_value:
         return None
 
-    access_token = fetch_shopify_access_token()
+    access_token = get_shopify_access_token()
     shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
     graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
 
@@ -583,7 +592,7 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
     if not gender and not size:
         return
 
-    access_token = fetch_shopify_access_token()
+    access_token = get_shopify_access_token()
     shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
     graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     product_gid = f"gid://shopify/Product/{product_id}"
