@@ -8,17 +8,23 @@ from services.gcs import bucket
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 DEFAULT_LISTING_PROMPT = """
-Analyze these clothing images (front, back, and tags).
+Analyze these clothing or accessory images (front, back, tags, and branding).
 
 Return exactly one valid JSON object with exactly these keys (no extras):
-- title: Professional product name including size.
+- title: Professional product name. Include the clothing size (e.g. "Size M") or shoe size (e.g. "Size US 8") in the title for clothing/shoes. For one-size accessories (like bags or hats), do not include the size in the title.
 - description: Shopify-ready item description. Use simple HTML like <div> or <br> for breaks, but keep the content "plain-text friendly" (use '-' for bullets instead of <ul>). Maximum 2 sentences.
-- brand: Found on tag.
-- size: Found on tag.
-- measurements: based on size. Use simple <br> for line breaks.
-- material: From care label.
+- brand: Found on tag, stamp, engraving, or logo.
+- size: Sizing specification. For clothing, use standard sizes (e.g. S, M, L, XL) or numerical sizes. For shoes, use standard shoe sizes (e.g. "US 8" or "EU 39"). For one-size accessories (such as bags, hats, sunglasses, scarves), use exactly "One Size".
+- measurements: Detailed flat lay measurements. For clothing, specify pit-to-pit, length, waist, inseam, etc. For bags, specify width, height, depth, and strap drop. For shoes, specify insole length, heel height, etc. Use simple <br> for line breaks.
+- material: From care label, material composition, or stamps (e.g. leather, canvas, 100% cotton).
 - target_gender: Female, Male, or Unisex.
-- product_category: Shopify product category based on image, description and type of product. Example: Apparel & Accessories > Clothing > Clothing Tops.
+- product_category: Shopify product category based on image, description and type of product. Follow the standard Shopify taxonomy breadcrumb. Examples:
+  - Apparel & Accessories > Clothing > Clothing Tops
+  - Apparel & Accessories > Clothing > Outerwear > Coats & Jackets
+  - Apparel & Accessories > Handbags, Wallets & Cases > Handbags
+  - Apparel & Accessories > Shoes
+  - Apparel & Accessories > Clothing Accessories > Hats
+  - Apparel & Accessories > Clothing Accessories > Sunglasses
 - fit_and_features: brief, use simple '-' for bullets and <br> for breaks.
 - style_notes: brief, use simple '-' for bullets and <br> for breaks.
 - tags: Array of 5 styling vibes (for example: "vintage", "dark academia").
