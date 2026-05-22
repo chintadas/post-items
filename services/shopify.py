@@ -62,14 +62,38 @@ def activate_shopify_session_with_fresh_token() -> None:
     session = shopify.Session(get_shop_domain(SHOPIFY_SHOP_URL), SHOPIFY_API_VERSION, access_token)
     shopify.ShopifyResource.activate_session(session)
 
+def run_graphql_query(query: str, variables: dict = None, timeout: int = 30) -> dict:
+    """Helper method to run a Shopify GraphQL API query or mutation.
+    Handles access token injection, endpoint URL construction, and response parsing/errors.
+    """
+    access_token = get_shopify_access_token()
+    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
+    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": access_token,
+    }
+    payload = {
+        "query": query,
+    }
+    if variables:
+        payload["variables"] = variables
+
+    response = requests.post(graphql_url, headers=headers, json=payload, timeout=timeout)
+    response.raise_for_status()
+    result = response.json()
+    
+    if result.get("errors"):
+        raise ValueError(f"Shopify GraphQL top-level errors: {result['errors']}")
+        
+    return result
+
 def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
     """Uploads GCS-hosted videos as Shopify product media via GraphQL."""
     if not video_paths:
         return
 
-    access_token = get_shopify_access_token()
-    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
-    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     product_gid = f"gid://shopify/Product/{product_id}"
 
     media_inputs = []
@@ -103,32 +127,19 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
         file_size_str = str(len(video_bytes))
         
         # 1. Request staging URL
-        stage_response = requests.post(
-            graphql_url,
-            headers={
-                "Content-Type": "application/json",
-                "X-Shopify-Access-Token": access_token,
-            },
-            json={
-                "query": staged_upload_mutation,
-                "variables": {
-                    "input": [{
-                        "resource": "VIDEO",
-                        "filename": filename,
-                        "mimeType": mime_type,
-                        "fileSize": file_size_str,
-                        "httpMethod": "POST"
-                    }]
-                }
-            },
-            timeout=30,
+        stage_payload = run_graphql_query(
+            staged_upload_mutation,
+            {
+                "input": [{
+                    "resource": "VIDEO",
+                    "filename": filename,
+                    "mimeType": mime_type,
+                    "fileSize": file_size_str,
+                    "httpMethod": "POST"
+                }]
+            }
         )
-        stage_response.raise_for_status()
-        stage_payload = stage_response.json()
         
-        if stage_payload.get("errors"):
-            raise ValueError(f"GraphQL errors requesting staged upload: {stage_payload['errors']}")
-            
         stage_data = stage_payload.get("data", {}).get("stagedUploadsCreate", {})
         if stage_data.get("userErrors"):
             raise ValueError(f"Staged upload user errors: {stage_data['userErrors']}")
@@ -173,29 +184,13 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
     }
     """
 
-    response = requests.post(
-        graphql_url,
-        headers={
-            "Content-Type": "application/json",
-            "X-Shopify-Access-Token": access_token,
-        },
-        json={
-            "query": mutation,
-            "variables": {
-                "media": media_inputs,
-                "productId": product_gid,
-            },
-        },
-        timeout=30,
+    payload = run_graphql_query(
+        mutation,
+        {
+            "media": media_inputs,
+            "productId": product_gid,
+        }
     )
-    response.raise_for_status()
-    payload = response.json()
-
-    errors = payload.get("errors")
-    if errors:
-        print(f"Shopify GraphQL top-level errors: {json.dumps(errors, ensure_ascii=True)}")
-        print(f"Shopify raw productCreateMedia payload: {json.dumps(payload, ensure_ascii=True)}")
-        raise ValueError(f"Shopify GraphQL errors: {errors}")
 
     media_result = payload.get("data", {}).get("productCreateMedia", {})
     media_user_errors = media_result.get("mediaUserErrors", [])
@@ -217,9 +212,6 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
 
 def publish_product_to_all_channels(product_id: int) -> int:
     """Publishes a product to all available Shopify sales channels."""
-    access_token = get_shopify_access_token()
-    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
-    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     product_gid = f"gid://shopify/Product/{product_id}"
 
     publications_query = """
@@ -232,20 +224,7 @@ def publish_product_to_all_channels(product_id: int) -> int:
       }
     }
     """
-    query_response = requests.post(
-        graphql_url,
-        headers={
-            "Content-Type": "application/json",
-            "X-Shopify-Access-Token": access_token,
-        },
-        json={"query": publications_query},
-        timeout=30,
-    )
-    query_response.raise_for_status()
-    query_payload = query_response.json()
-    if query_payload.get("errors"):
-        raise ValueError(f"Shopify publication query errors: {query_payload['errors']}")
-
+    query_payload = run_graphql_query(publications_query)
     publications = query_payload.get("data", {}).get("publications", {}).get("nodes", [])
     publication_ids = [publication.get("id") for publication in publications if publication.get("id")]
     if not publication_ids:
@@ -274,26 +253,7 @@ def publish_product_to_all_channels(product_id: int) -> int:
     }
     """
     publish_input = [{"publicationId": publication_id} for publication_id in publication_ids]
-    publish_response = requests.post(
-        graphql_url,
-        headers={
-            "Content-Type": "application/json",
-            "X-Shopify-Access-Token": access_token,
-        },
-        json={
-            "query": publish_mutation,
-            "variables": {
-                "id": product_gid,
-                "input": publish_input,
-            },
-        },
-        timeout=30,
-    )
-    publish_response.raise_for_status()
-    publish_payload = publish_response.json()
-    if publish_payload.get("errors"):
-        raise ValueError(f"Shopify publish mutation errors: {publish_payload['errors']}")
-
+    publish_payload = run_graphql_query(publish_mutation, {"id": product_gid, "input": publish_input})
     user_errors = (
         publish_payload.get("data", {})
         .get("publishablePublish", {})
@@ -306,10 +266,6 @@ def publish_product_to_all_channels(product_id: int) -> int:
 
 def set_inventory_quantity(inventory_item_id: int, quantity: int = 1) -> None:
     """Sets the available inventory quantity using the inventorySetQuantities GraphQL mutation."""
-    access_token = get_shopify_access_token()
-    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
-    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
-    
     # Fetch first active location using python shopify API
     locations = shopify.Location.find()
     if not locations:
@@ -348,21 +304,7 @@ def set_inventory_quantity(inventory_item_id: int, quantity: int = 1) -> None:
         }
     }
     
-    response = requests.post(
-        graphql_url,
-        headers={
-            "Content-Type": "application/json",
-            "X-Shopify-Access-Token": access_token,
-        },
-        json={"query": mutation, "variables": variables},
-        timeout=30,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    
-    if payload.get("errors"):
-        raise ValueError(f"GraphQL errors setting inventory: {payload['errors']}")
-        
+    payload = run_graphql_query(mutation, variables)
     user_errors = payload.get("data", {}).get("inventorySetQuantities", {}).get("userErrors", [])
     if user_errors:
         raise ValueError(f"Inventory user errors: {user_errors}")
@@ -372,9 +314,6 @@ def update_product_category(product_id: int, category_string: str) -> None:
     if not category_string:
         return
 
-    access_token = get_shopify_access_token()
-    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
-    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     product_gid = f"gid://shopify/Product/{product_id}"
 
     # 1. Fetch product details to use as search context
@@ -385,14 +324,8 @@ def update_product_category(product_id: int, category_string: str) -> None:
       }
     }
     """
-    product_response = requests.post(
-        graphql_url,
-        headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
-        json={"query": product_query, "variables": {"id": product_gid}},
-        timeout=30,
-    )
-    product_response.raise_for_status()
-    title = product_response.json().get("data", {}).get("product", {}).get("title", "")
+    product_payload = run_graphql_query(product_query, {"id": product_gid})
+    title = product_payload.get("data", {}).get("product", {}).get("title", "")
 
     # 2. Resolve the category using the modern 'taxonomy' query
     # We try the full breadcrumb, then the leaf category, then the product title.
@@ -411,19 +344,13 @@ def update_product_category(product_id: int, category_string: str) -> None:
 
     def search_taxonomy(term):
         if not term: return None
-        resp = requests.post(
-            graphql_url,
-            headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
-            json={"query": taxonomy_query, "variables": {"search": term}},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        payload = resp.json()
-        if payload.get("errors"):
-            print(f"⚠️ Taxonomy query error for '{term}': {payload['errors']}")
+        try:
+            payload = run_graphql_query(taxonomy_query, {"search": term})
+            nodes = payload.get("data", {}).get("taxonomy", {}).get("categories", {}).get("nodes", [])
+            return nodes[0] if nodes else None
+        except ValueError as e:
+            print(f"⚠️ Taxonomy query error for '{term}': {e}")
             return None
-        nodes = payload.get("data", {}).get("taxonomy", {}).get("categories", {}).get("nodes", [])
-        return nodes[0] if nodes else None
 
     # Try 1: Full AI-generated breadcrumb
     target_node = search_taxonomy(category_string)
@@ -469,14 +396,7 @@ def update_product_category(product_id: int, category_string: str) -> None:
         }
     }
     
-    update_response = requests.post(
-        graphql_url,
-        headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
-        json={"query": update_mutation, "variables": update_variables},
-        timeout=30,
-    )
-    update_response.raise_for_status()
-    update_payload = update_response.json()
+    update_payload = run_graphql_query(update_mutation, update_variables)
     
     user_errors = update_payload.get("data", {}).get("productUpdate", {}).get("userErrors", [])
     if user_errors:
@@ -492,10 +412,6 @@ def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
     if not search_value:
         return None
 
-    access_token = get_shopify_access_token()
-    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
-    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
-
     # We query for all metaobjects of this type and do a case-insensitive match.
     # Standard taxonomy metaobjects are usually few enough to fetch in one go (or first 100).
     query = """
@@ -510,17 +426,10 @@ def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
     }
     """
     
-    resp = requests.post(
-        graphql_url,
-        headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
-        json={"query": query, "variables": {"type": type_name}},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    payload = resp.json()
-    
-    if payload.get("errors"):
-        print(f"⚠️ Error resolving metaobject for {type_name}: {payload['errors']}")
+    try:
+        payload = run_graphql_query(query, {"type": type_name})
+    except ValueError as e:
+        print(f"⚠️ Error resolving metaobject for {type_name}: {e}")
         return None
         
     nodes = payload.get("data", {}).get("metaobjects", {}).get("nodes", [])
@@ -621,9 +530,6 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
     if not gender and not size:
         return
 
-    access_token = get_shopify_access_token()
-    shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
-    graphql_url = f"https://{shop_domain}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
     product_gid = f"gid://shopify/Product/{product_id}"
 
     metafields = []
@@ -709,14 +615,7 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
         }
     }
 
-    resp = requests.post(
-        graphql_url,
-        headers={"Content-Type": "application/json", "X-Shopify-Access-Token": access_token},
-        json={"query": mutation, "variables": variables},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    payload = resp.json()
+    payload = run_graphql_query(mutation, variables)
     
     user_errors = payload.get("data", {}).get("productUpdate", {}).get("userErrors", [])
     if user_errors:
