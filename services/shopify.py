@@ -547,6 +547,14 @@ def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
             for val in overrides[search_lower]:
                 if val not in normalized_searches:
                     normalized_searches.append(val)
+    elif type_name == "shopify--shoe-size":
+        # If "us 8" -> try "8"
+        clean_num = re.sub(r'^(us|eu|uk)\s+', '', search_lower)
+        if clean_num != search_lower:
+            normalized_searches.append(clean_num)
+        # If "8" -> try "us 8"
+        if re.match(r'^\d+(\.5)?$', search_lower):
+            normalized_searches.append(f"us {search_lower}")
     
     for s in normalized_searches:
         # Try exact match on displayName first
@@ -570,8 +578,8 @@ def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
     print(f"ℹ️ Available {type_name} in store: {', '.join(available_names[:20])}")
     return None
 
-def set_category_metafields(product_id: int, gender: str, size: str) -> None:
-    """Sets the Shopify category metafields (e.g. Target Gender, Size) using the GraphQL API."""
+def set_category_metafields(product_id: int, gender: str, size: str, category_string: str = None) -> None:
+    """Sets the Shopify category metafields (e.g. Target Gender, Size/Shoe Size) using the GraphQL API."""
     if not gender and not size:
         return
 
@@ -599,20 +607,24 @@ def set_category_metafields(product_id: int, gender: str, size: str) -> None:
         else:
             print(f"⚠️ Could not resolve GID for Gender: {gender}")
 
-    # 2. Resolve Size Metaobject
+    # 2. Resolve Size / Shoe Size Metaobject
     if size:
-        size_gid = resolve_metaobject_gid("shopify--size", size)
+        is_shoes = category_string and "shoes" in category_string.lower()
+        size_type = "shopify--shoe-size" if is_shoes else "shopify--size"
+        metafield_key = "shoe-size" if is_shoes else "size"
+        
+        size_gid = resolve_metaobject_gid(size_type, size)
         if size_gid:
             metafields.append({
                 "ownerId": product_gid,
                 "namespace": "shopify",
-                "key": "size",
+                "key": metafield_key,
                 "value": json.dumps([size_gid]),
                 "type": "list.metaobject_reference"
             })
-            print(f"✅ Resolved Size '{size}' to {size_gid}")
+            print(f"✅ Resolved {size_type} '{size}' to {size_gid}")
         else:
-            print(f"⚠️ Could not resolve GID for Size: {size}")
+            print(f"⚠️ Could not resolve GID for Size: {size} using type {size_type}")
 
     if not metafields:
         return

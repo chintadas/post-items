@@ -90,7 +90,7 @@ async def process_folder_listing(folder_name: str) -> dict:
         try:
             update_product_category(new_product.id, data["product_category"])
             # After category is set, we can set the specific category metafields
-            set_category_metafields(new_product.id, data.get("target_gender"), data.get("size"))
+            set_category_metafields(new_product.id, data.get("target_gender"), data.get("size"), data["product_category"])
         except Exception as e:
             print(f"⚠️ Failed to set Shopify product category or metafields: {e}")
 
