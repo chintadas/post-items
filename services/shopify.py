@@ -609,22 +609,26 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
 
     # 2. Resolve Size / Shoe Size Metaobject
     if size:
-        is_shoes = category_string and "shoes" in category_string.lower()
-        size_type = "shopify--shoe-size" if is_shoes else "shopify--size"
-        metafield_key = "shoe-size" if is_shoes else "size"
-        
-        size_gid = resolve_metaobject_gid(size_type, size)
-        if size_gid:
-            metafields.append({
-                "ownerId": product_gid,
-                "namespace": "shopify",
-                "key": metafield_key,
-                "value": json.dumps([size_gid]),
-                "type": "list.metaobject_reference"
-            })
-            print(f"✅ Resolved {size_type} '{size}' to {size_gid}")
+        is_bag = category_string and ("bag" in category_string.lower() or "handbag" in category_string.lower())
+        if is_bag:
+            print("ℹ️ Skipping category size metafield for bags.")
         else:
-            print(f"⚠️ Could not resolve GID for Size: {size} using type {size_type}")
+            is_shoes = category_string and "shoes" in category_string.lower()
+            size_type = "shopify--shoe-size" if is_shoes else "shopify--size"
+            metafield_key = "shoe-size" if is_shoes else "size"
+            
+            size_gid = resolve_metaobject_gid(size_type, size)
+            if size_gid:
+                metafields.append({
+                    "ownerId": product_gid,
+                    "namespace": "shopify",
+                    "key": metafield_key,
+                    "value": json.dumps([size_gid]),
+                    "type": "list.metaobject_reference"
+                })
+                print(f"✅ Resolved {size_type} '{size}' to {size_gid}")
+            else:
+                print(f"⚠️ Could not resolve GID for Size: {size} using type {size_type}")
 
     if not metafields:
         return
