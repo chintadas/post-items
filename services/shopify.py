@@ -587,6 +587,35 @@ def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
     print(f"ℹ️ Available {type_name} in store: {', '.join(available_names[:20])}")
     return None
 
+# Standard mapping of product category keywords to specific taxonomy metafield configurations.
+# This makes it easy to support new categories (e.g. belts, hats, sunglasses) without nested if/else statements.
+CATEGORY_TAXO_RULES = [
+    {
+        "keywords": ["bag", "handbag"],
+        "skip_size": True,
+    },
+    {
+        "keywords": ["shoes"],
+        "size_type": "shopify--shoe-size",
+        "metafield_key": "shoe-size",
+        "skip_size": False,
+    },
+]
+
+def resolve_category_taxo_rule(category_string: str) -> dict:
+    """Matches category string against configured rules. Defaults to standard clothing rule."""
+    if category_string:
+        cat_lower = category_string.lower()
+        for rule in CATEGORY_TAXO_RULES:
+            for keyword in rule["keywords"]:
+                if keyword in cat_lower:
+                    return rule
+    return {
+        "size_type": "shopify--size",
+        "metafield_key": "size",
+        "skip_size": False,
+    }
+
 def set_category_metafields(product_id: int, gender: str, size: str, category_string: str = None) -> None:
     """Sets the Shopify category metafields (e.g. Target Gender, Size/Shoe Size) using the GraphQL API."""
     if not gender and not size:
@@ -618,13 +647,12 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
 
     # 2. Resolve Size / Shoe Size Metaobject
     if size:
-        is_bag = category_string and ("bag" in category_string.lower() or "handbag" in category_string.lower())
-        if is_bag:
-            print("ℹ️ Skipping category size metafield for bags.")
+        rule = resolve_category_taxo_rule(category_string)
+        if rule.get("skip_size"):
+            print("ℹ️ Skipping category size metafield based on taxonomy rule.")
         else:
-            is_shoes = category_string and "shoes" in category_string.lower()
-            size_type = "shopify--shoe-size" if is_shoes else "shopify--size"
-            metafield_key = "shoe-size" if is_shoes else "size"
+            size_type = rule.get("size_type", "shopify--size")
+            metafield_key = rule.get("metafield_key", "size")
             
             size_gid = resolve_metaobject_gid(size_type, size)
             if size_gid:
