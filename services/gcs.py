@@ -87,12 +87,13 @@ def move_folder_to_listed(folder_name: str) -> None:
 def get_pending_folders() -> List[str]:
     """Returns top-level folders that are not already in listed/."""
     folder_names = set()
-    for blob in bucket.list_blobs():
-        parts = blob.name.split("/")
-        if len(parts) < 2:
-            continue
-        top_level = parts[0].strip()
+    blobs = bucket.list_blobs(delimiter="/")
+    # We must consume the iterator to populate the prefixes attribute
+    list(blobs)
+    for prefix in blobs.prefixes:
+        top_level = prefix.strip("/")
         if not top_level or top_level == "listed":
             continue
         folder_names.add(top_level)
     return sorted(folder_names)
+
