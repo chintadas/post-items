@@ -47,7 +47,7 @@ async def process_folder_listing(folder_name: str) -> dict:
     body_sections = [
         f"<div>{data['description']}</div>",
         f"<p><strong>Size:</strong> {data['size']}</p>",
-        f"<p><strong>Measurements:</strong> {data['measurements']}</p>",
+        f"<p><strong>Approximate Measurements:</strong> {data['measurements']}</p>",
         f"<p><strong>Material:</strong> {data['material']}</p>",
     ]
     

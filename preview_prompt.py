@@ -11,7 +11,7 @@ def build_body_html(product_data: dict) -> str:
     body_sections = [
         f"<div>{product_data.get('description', '')}</div>",
         f"<p><strong>Size:</strong> {product_data.get('size', '')}</p>",
-        f"<p><strong>Measurements:</strong> {product_data.get('measurements', '')}</p>",
+        f"<p><strong>Approximate Measurements:</strong> {product_data.get('measurements', '')}</p>",
         f"<p><strong>Material:</strong> {product_data.get('material', '')}</p>",
         f"<div><strong>Fit & Features:</strong> {product_data.get('fit_and_features', '')}</div>",
         f"<div><strong>Style Notes:</strong> {product_data.get('style_notes', '')}</div>",
