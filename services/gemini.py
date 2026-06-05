@@ -27,7 +27,7 @@ def load_default_prompt() -> str:
         "- description: Shopify-ready item description. Use simple HTML like <div> or <br> for breaks, but keep the content \"plain-text friendly\" (use '-' for bullets instead of <ul>). Maximum 2 sentences.\n"
         "- brand: Found on tag, stamp, engraving, or logo.\n"
         "- size: Sizing specification. For clothing, use standard sizes (e.g. S, M, L, XL) or numerical sizes. For shoes, use standard shoe sizes (e.g. \"US 8\" or \"EU 39\"). For one-size accessories (such as bags, hats, sunglasses, scarves), use exactly \"One Size\".\n"
-        "- measurements: Detailed flat lay measurements. For clothing, specify pit-to-pit, length, waist, inseam, etc. For bags, specify width, height, depth, and strap drop. For shoes, specify insole length, heel height, etc. Use simple <br> for line breaks.\n"
+        "- measurements: Detailed flat lay measurements. For clothing, always specify length (including total length/outseam for pants, trousers, shorts, and skirts) in addition to other relevant measurements like pit-to-pit, waist, inseam, and rise. For bags, specify width, height, depth, and strap drop. For shoes, specify insole length, heel height, etc. Use simple <br> for line breaks.\n"
         "- material: From care label, material composition, or stamps (e.g. leather, canvas, 100% cotton).\n"
         "- target_gender: Female, Male, or Unisex.\n"
         "- product_category: Shopify product category based on image, description and type of product. Follow the standard Shopify taxonomy breadcrumb. Examples:\n"
