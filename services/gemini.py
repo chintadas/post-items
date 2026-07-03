@@ -1,9 +1,12 @@
 import json
+import logging
 from typing import List
 import google.genai as genai
 from google.genai import types
 from config import GEMINI_API_KEY
 from services.gcs import bucket
+
+logger = logging.getLogger(__name__)
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -17,7 +20,7 @@ def load_default_prompt() -> str:
             with open(prompt_path, "r", encoding="utf-8") as f:
                 return f.read().strip()
         except Exception as e:
-            print(f"⚠️ Failed to read prompt.txt: {e}. Using inline fallback.")
+            logger.warning(f"Failed to read prompt.txt: {e}. Using inline fallback.")
     
     # Inline fallback
     return (
@@ -72,10 +75,10 @@ async def analyze_images_via_vlm(
     contents = [prompt]
     for path in gcs_paths:
         contents.append(types.Part.from_bytes(mime_type="image/jpeg", data=bucket.blob(path).download_as_bytes()))
-        print(f"Added image for analysis: {path}")
+        logger.info(f"Added image for analysis: {path}")
     
     response = client.models.generate_content(model="gemini-flash-latest", contents=contents)
-    print(f"Raw Gemini response: {response.text}")
+    logger.info(f"Raw Gemini response: {response.text}")
     # Strip any markdown formatting Gemini might add
     clean_json = response.text.replace('```json', '').replace('```', '').strip()
     try:

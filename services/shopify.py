@@ -1,11 +1,14 @@
+import json
+import logging
 import os
 import re
-import json
 import uuid
+from typing import List
+from urllib.parse import urlparse
 import requests
 import shopify
-from urllib.parse import urlparse
-from typing import List
+
+logger = logging.getLogger(__name__)
 
 from config import (
     SHOPIFY_CLIENT_ID,
@@ -121,7 +124,7 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
         filename = os.path.basename(path)
         mime_type = "video/quicktime" if filename.lower().endswith(".mov") else "video/mp4"
         
-        print(f"Downloading video from GCS for staging: {path}")
+        logger.info(f"Downloading video from GCS for staging: {path}")
         blob = bucket.blob(path)
         video_bytes = blob.download_as_bytes()
         file_size_str = str(len(video_bytes))
@@ -149,13 +152,13 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
         resource_url = target["resourceUrl"]
         parameters = {p["name"]: p["value"] for p in target["parameters"]}
         
-        print(f"Uploading video to Shopify staging ({len(video_bytes)} bytes)...")
+        logger.info(f"Uploading video to Shopify staging ({len(video_bytes)} bytes)...")
         # 2. Upload file to staging URL
         files = {"file": (filename, video_bytes, mime_type)}
         upload_response = requests.post(upload_url, data=parameters, files=files, timeout=120)
         upload_response.raise_for_status()
         
-        print(f"✅ Staged video successfully: {resource_url}")
+        logger.info(f"Staged video successfully: {resource_url}")
         
         # 3. Add to media inputs for productCreateMedia
         media_inputs.append(
@@ -195,8 +198,8 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
     media_result = payload.get("data", {}).get("productCreateMedia", {})
     media_user_errors = media_result.get("mediaUserErrors", [])
     if media_user_errors:
-        print(f"Shopify mediaUserErrors: {json.dumps(media_user_errors, ensure_ascii=True)}")
-        print(
+        logger.error(f"Shopify mediaUserErrors: {json.dumps(media_user_errors, ensure_ascii=True)}")
+        logger.error(
             "Shopify productCreateMedia debug context: "
             + json.dumps(
                 {
@@ -228,7 +231,7 @@ def publish_product_to_all_channels(product_id: int) -> int:
     publications = query_payload.get("data", {}).get("publications", {}).get("nodes", [])
     publication_ids = [publication.get("id") for publication in publications if publication.get("id")]
     if not publication_ids:
-        print("No Shopify publications found; skipping channel publishing.")
+        logger.info("No Shopify publications found; skipping channel publishing.")
         return 0
 
     publish_mutation = """
@@ -269,7 +272,7 @@ def set_inventory_quantity(inventory_item_id: int, quantity: int = 1) -> None:
     # Fetch first active location using python shopify API
     locations = shopify.Location.find()
     if not locations:
-        print("No locations found to set inventory.")
+        logger.warning("No locations found to set inventory.")
         return
         
     location_gid = f"gid://shopify/Location/{locations[0].id}"
@@ -349,7 +352,7 @@ def update_product_category(product_id: int, category_string: str) -> None:
             nodes = payload.get("data", {}).get("taxonomy", {}).get("categories", {}).get("nodes", [])
             return nodes[0] if nodes else None
         except ValueError as e:
-            print(f"⚠️ Taxonomy query error for '{term}': {e}")
+            logger.warning(f"Taxonomy query error for '{term}': {e}")
             return None
 
     # Try 1: Full AI-generated breadcrumb
@@ -365,11 +368,11 @@ def update_product_category(product_id: int, category_string: str) -> None:
         target_node = search_taxonomy(title)
 
     if not target_node:
-        print(f"⚠️ Failed to resolve Shopify taxonomy category for product {product_id} after all attempts.")
+        logger.warning(f"Failed to resolve Shopify taxonomy category for product {product_id} after all attempts.")
         return
 
     target_category_gid = target_node["id"]
-    print(f"✅ Resolved category: {target_node['fullName']} ({target_category_gid})")
+    logger.info(f"Resolved category: {target_node['fullName']} ({target_category_gid})")
 
     # 3. Update the product with the new 'category' field (standardized in 2026-04)
     update_mutation = """
@@ -400,9 +403,9 @@ def update_product_category(product_id: int, category_string: str) -> None:
     
     user_errors = update_payload.get("data", {}).get("productUpdate", {}).get("userErrors", [])
     if user_errors:
-        print(f"⚠️ Shopify category update failed: {user_errors}")
+        logger.warning(f"Shopify category update failed: {user_errors}")
     else:
-        print(f"✅ Successfully set Shopify product category for product {product_id}")
+        logger.info(f"Successfully set Shopify product category for product {product_id}")
 
 def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
     """
@@ -429,12 +432,12 @@ def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
     try:
         payload = run_graphql_query(query, {"type": type_name})
     except ValueError as e:
-        print(f"⚠️ Error resolving metaobject for {type_name}: {e}")
+        logger.error(f"Error resolving metaobject for {type_name}: {e}", exc_info=True)
         return None
         
     nodes = payload.get("data", {}).get("metaobjects", {}).get("nodes", [])
     if not nodes:
-        print(f"⚠️ No metaobjects found for type {type_name}. Ensure they are 'activated' in Shopify Admin.")
+        logger.warning(f"No metaobjects found for type {type_name}. Ensure they are 'activated' in Shopify Admin.")
         return None
 
     search_lower = search_value.lower()
@@ -492,8 +495,8 @@ def resolve_metaobject_gid(type_name: str, search_value: str) -> str:
 
     # If we got here, we failed to find a match. Log what WAS available.
     available_names = [n.get("displayName") for n in nodes if n.get("displayName")]
-    print(f"⚠️ Could not resolve '{search_value}' (tried {normalized_searches}) for {type_name}.")
-    print(f"ℹ️ Available {type_name} in store: {', '.join(available_names[:20])}")
+    logger.warning(f"Could not resolve '{search_value}' (tried {normalized_searches}) for {type_name}.")
+    logger.info(f"Available {type_name} in store: {', '.join(available_names[:20])}")
     return None
 
 # Standard mapping of product category keywords to specific taxonomy metafield configurations.
@@ -547,15 +550,15 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
                 "value": json.dumps([gender_gid]),
                 "type": "list.metaobject_reference"
             })
-            print(f"✅ Resolved Gender '{gender}' to {gender_gid}")
+            logger.info(f"Resolved Gender '{gender}' to {gender_gid}")
         else:
-            print(f"⚠️ Could not resolve GID for Gender: {gender}")
+            logger.warning(f"Could not resolve GID for Gender: {gender}")
 
     # 2. Resolve Size / Shoe Size Metaobject
     if size:
         rule = resolve_category_taxo_rule(category_string)
         if rule.get("skip_size"):
-            print("ℹ️ Skipping category size metafield based on taxonomy rule.")
+            logger.info("Skipping category size metafield based on taxonomy rule.")
         else:
             size_type = rule.get("size_type", "shopify--size")
             metafield_key = rule.get("metafield_key", "size")
@@ -569,9 +572,9 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
                     "value": json.dumps([size_gid]),
                     "type": "list.metaobject_reference"
                 })
-                print(f"✅ Resolved {size_type} '{size}' to {size_gid}")
+                logger.info(f"Resolved {size_type} '{size}' to {size_gid}")
             else:
-                print(f"⚠️ Could not resolve GID for Size: {size} using type {size_type}")
+                logger.warning(f"Could not resolve GID for Size: {size} using type {size_type}")
 
     if not metafields:
         return
@@ -619,6 +622,6 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
     
     user_errors = payload.get("data", {}).get("productUpdate", {}).get("userErrors", [])
     if user_errors:
-        print(f"⚠️ Category metafields set failed: {user_errors}")
+        logger.warning(f"Category metafields set failed: {user_errors}")
     else:
-        print(f"✅ Successfully updated category metafields for product {product_id}")
+        logger.info(f"Successfully updated category metafields for product {product_id}")

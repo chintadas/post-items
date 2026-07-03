@@ -1,5 +1,13 @@
+import logging
 import traceback
 import shopify
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
@@ -38,7 +46,7 @@ async def process_folder_listing(folder_name: str) -> dict:
         raise ValueError("No images found in that folder.")
     video_paths = get_video_paths_for_folder(folder_name)
 
-    print(f"Found {len(image_paths)} images for folder '{folder_name}': {image_paths}")
+    logger.info(f"Found {len(image_paths)} images for folder '{folder_name}': {image_paths}")
     data = await analyze_images_via_vlm(image_paths, generate_dummy=False)
 
     activate_shopify_session_with_fresh_token()
@@ -82,9 +90,9 @@ async def process_folder_listing(folder_name: str) -> dict:
     if new_product.variants and getattr(new_product.variants[0], "inventory_item_id", None):
         try:
             set_inventory_quantity(new_product.variants[0].inventory_item_id, 1)
-            print("Set inventory quantity to 1 for variant.")
+            logger.info("Set inventory quantity to 1 for variant.")
         except Exception as e:
-            print(f"⚠️ Failed to set inventory quantity: {e}")
+            logger.warning(f"Failed to set inventory quantity: {e}")
 
     # Set the Shopify product category (standardized taxonomy)
         try:
@@ -92,7 +100,7 @@ async def process_folder_listing(folder_name: str) -> dict:
             # After category is set, we can set the specific category metafields
             set_category_metafields(new_product.id, data.get("target_gender"), data.get("size"), data["product_category"])
         except Exception as e:
-            print(f"⚠️ Failed to set Shopify product category or metafields: {e}")
+            logger.warning(f"Failed to set Shopify product category or metafields: {e}")
 
     # Add images sequentially after product creation
     # Attempting to add many images in the initial product.save() 
@@ -101,7 +109,7 @@ async def process_folder_listing(folder_name: str) -> dict:
         try:
             ensure_image_size_limit(path)
         except Exception as e:
-            print(f"⚠️ Error checking/resizing image {path}: {e}")
+            logger.warning(f"Error checking/resizing image {path}: {e}")
 
         img = shopify.Image()
         img.product_id = new_product.id
@@ -110,26 +118,24 @@ async def process_folder_listing(folder_name: str) -> dict:
         img.src = generate_signed_url(path, bust_cache=True)
         if not img.save():
             errors = img.errors.full_messages() if hasattr(img, "errors") else "Unknown error"
-            print(f"⚠️ Failed to attach image {path} to product {new_product.id}. Errors: {errors}")
+            logger.warning(f"Failed to attach image {path} to product {new_product.id}. Errors: {errors}")
         else:
-            print(f"Attached image {path} to product {new_product.id}")
+            logger.info(f"Attached image {path} to product {new_product.id}")
 
-    print(f"✅ Shopify save successful for folder '{folder_name}'.")
-    print(f"Shopify product id: {new_product.id}")
+    logger.info(f"Shopify save successful for folder '{folder_name}'.")
+    logger.info(f"Shopify product id: {new_product.id}")
 
     published_count = publish_product_to_all_channels(new_product.id)
     if published_count:
-        print(f"Published product {new_product.id} to {published_count} Shopify channel(s).")
+        logger.info(f"Published product {new_product.id} to {published_count} Shopify channel(s).")
 
     if video_paths:
         try:
-            print(f"Attempting to upload {len(video_paths)} video(s) to Shopify...")
+            logger.info(f"Attempting to upload {len(video_paths)} video(s) to Shopify...")
             upload_videos_to_shopify(new_product.id, video_paths)
-            print(f"✅ Successfully uploaded {len(video_paths)} video(s) to Shopify product media.")
+            logger.info(f"Successfully uploaded {len(video_paths)} video(s) to Shopify product media.")
         except Exception as e:
-            print(f"⚠️ ERROR: Failed to upload videos to Shopify: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Failed to upload videos to Shopify: {e}", exc_info=True)
 
     move_folder_to_listed(folder_name)
     shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
@@ -145,7 +151,7 @@ async def preview_folder_listing_data(folder_name: str, prompt: str) -> dict:
     if not image_paths:
         raise ValueError("No images found in that folder.")
 
-    print(f"Previewing LLM output for folder '{folder_name}' with {len(image_paths)} images.")
+    logger.info(f"Previewing LLM output for folder '{folder_name}' with {len(image_paths)} images.")
     data = await analyze_images_via_vlm(
         image_paths,
         generate_dummy=False,
@@ -170,8 +176,7 @@ async def list_item(folder_name: str, x_api_key: str = Header(None)):
         return result
 
     except Exception as e:
-        print(f"Error listing {folder_name}: {e}")
-        print(traceback.format_exc())
+        logger.error(f"Error listing {folder_name}: {e}", exc_info=True)
         error_msg = str(e)
         send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
         return {"status": "error", "error_msg": error_msg}
@@ -196,12 +201,11 @@ async def list_all_items(x_api_key: str = Header(None)):
             success_count += 1
         except Exception as e:
             error_msg = str(e)
-            print(f"Error listing {folder_name}: {e}")
-            print(traceback.format_exc())
+            logger.error(f"Error listing {folder_name}: {e}", exc_info=True)
             try:
                 send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
             except Exception as pe:
-                print(f"Failed to send pushover notification: {pe}")
+                logger.error(f"Failed to send pushover notification: {pe}", exc_info=True)
             results.append({"folder": folder_name, "status": "error", "error_msg": error_msg})
 
     return {
@@ -224,9 +228,9 @@ async def preview_listing(payload: PromptExperimentRequest, x_api_key: str = Hea
             prompt=payload.prompt,
         )
     except Exception as e:
-        print(f"Error previewing folder {payload.folder_name}: {e}")
-        print(traceback.format_exc())
+        logger.error(f"Error previewing folder {payload.folder_name}: {e}", exc_info=True)
         return {"status": "error", "error_msg": str(e)}
+
 
 if __name__ == "__main__":
     import uvicorn

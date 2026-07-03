@@ -1,10 +1,13 @@
 import io
+import logging
 import os
 from typing import List
 from datetime import timedelta
 from PIL import Image, ImageOps
 from google.cloud import storage
 from config import GCS_BUCKET_NAME
+
+logger = logging.getLogger(__name__)
 
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
@@ -36,17 +39,17 @@ def ensure_image_size_limit(blob_name: str, max_megapixels: float = 19.5) -> Non
             scale_factor = (max_megapixels / megapixels) ** 0.5
             new_width = int(width * scale_factor)
             new_height = int(height * scale_factor)
-            print(f"Resizing {blob_name} from {width}x{height} ({megapixels:.1f}MP) to {new_width}x{new_height}")
+            logger.info(f"Resizing {blob_name} from {width}x{height} ({megapixels:.1f}MP) to {new_width}x{new_height}")
             target_img = clean_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
         else:
-            print(f"Cleaning metadata from {blob_name} to ensure pure JPEG")
+            logger.info(f"Cleaning metadata from {blob_name} to ensure pure JPEG")
             
         output_buffer = io.BytesIO()
         target_img.save(output_buffer, format="JPEG", quality=85)
         
         # Upload back to GCS
         blob.upload_from_string(output_buffer.getvalue(), content_type="image/jpeg")
-        print(f"✅ Successfully cleaned and updated {blob_name} in GCS.")
+        logger.info(f"Successfully cleaned and updated {blob_name} in GCS.")
 
 def generate_signed_url(blob_name: str, bust_cache: bool = False):
     """Generates a 15-minute temporary link for Shopify to fetch the image."""

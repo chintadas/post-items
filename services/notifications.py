@@ -1,5 +1,8 @@
+import logging
 import requests
 from config import PUSHOVER_API_TOKEN, PUSHOVER_USER_KEY
+
+logger = logging.getLogger(__name__)
 
 def send_pushover(message: str):
     """Sends a push notification to your iPhone."""
@@ -13,6 +16,6 @@ def send_pushover(message: str):
         response = requests.post(url, data=data, timeout=10)
         response.raise_for_status()
     except Exception as e:
-        print(f"⚠️ Failed to send Pushover notification: {e}")
+        logger.error(f"Failed to send Pushover notification: {e}", exc_info=True)
 
 
