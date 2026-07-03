@@ -9,5 +9,10 @@ def send_pushover(message: str):
         "user": PUSHOVER_USER_KEY,
         "message": message
     }
-    requests.post(url, data=data)
+    try:
+        response = requests.post(url, data=data, timeout=10)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"⚠️ Failed to send Pushover notification: {e}")
+
 

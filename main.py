@@ -198,7 +198,10 @@ async def list_all_items(x_api_key: str = Header(None)):
             error_msg = str(e)
             print(f"Error listing {folder_name}: {e}")
             print(traceback.format_exc())
-            send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
+            try:
+                send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
+            except Exception as pe:
+                print(f"Failed to send pushover notification: {pe}")
             results.append({"folder": folder_name, "status": "error", "error_msg": error_msg})
 
     return {
