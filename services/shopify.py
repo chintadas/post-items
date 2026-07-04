@@ -528,9 +528,9 @@ def resolve_category_taxo_rule(category_string: str) -> dict:
         "skip_size": False,
     }
 
-def set_category_metafields(product_id: int, gender: str, size: str, category_string: str = None) -> None:
-    """Sets the Shopify category metafields (e.g. Target Gender, Size/Shoe Size) using the GraphQL API."""
-    if not gender and not size:
+def set_category_metafields(product_id: int, gender: str, size: str, category_string: str = None, retail: str = None) -> None:
+    """Sets the Shopify category metafields (e.g. Target Gender, Size/Shoe Size) and retail price using the GraphQL API."""
+    if not gender and not size and not retail:
         return
 
     product_gid = f"gid://shopify/Product/{product_id}"
@@ -575,6 +575,17 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
                 logger.info(f"Resolved {size_type} '{size}' to {size_gid}")
             else:
                 logger.warning(f"Could not resolve GID for Size: {size} using type {size_type}")
+
+    # 3. Add Custom Retail Price Metafield
+    if retail:
+        metafields.append({
+            "ownerId": product_gid,
+            "namespace": "custom",
+            "key": "retail_price",
+            "value": str(retail),
+            "type": "single_line_text_field"
+        })
+        logger.info(f"Adding retail price metafield: {retail}")
 
     if not metafields:
         return

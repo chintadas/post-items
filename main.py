@@ -59,9 +59,6 @@ async def process_folder_listing(folder_name: str) -> dict:
         f"<p><strong>Material:</strong> {data['material']}</p>",
     ]
     
-    if data.get("retail"):
-        body_sections.append(f"<p><strong>Retails for:</strong> {data['retail']}</p>")
-        
     body_sections.extend([
         f"<div><strong>Fit & Features:</strong> {data['fit_and_features']}</div>",
         f"<div><strong>Style Notes:</strong> {data['style_notes']}</div>",
@@ -98,7 +95,13 @@ async def process_folder_listing(folder_name: str) -> dict:
         try:
             update_product_category(new_product.id, data["product_category"])
             # After category is set, we can set the specific category metafields
-            set_category_metafields(new_product.id, data.get("target_gender"), data.get("size"), data["product_category"])
+            set_category_metafields(
+                new_product.id,
+                data.get("target_gender"),
+                data.get("size"),
+                data["product_category"],
+                data.get("retail")
+            )
         except Exception as e:
             logger.warning(f"Failed to set Shopify product category or metafields: {e}")
 
