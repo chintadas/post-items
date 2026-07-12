@@ -64,6 +64,8 @@ async def process_folder_listing(folder_name: str) -> dict:
         f"<div><strong>Style Notes:</strong> {data['style_notes']}</div>",
         f"<div class='usually-ships'>Usually ships within 24 hours.</div>"
     ])
+    if data.get("retail"):
+        body_sections.append(f"<p><strong>Retails for:</strong> {data['retail']}</p>")
     new_product.body_html = "\n\n".join(body_sections)
     new_product.vendor = data["brand"]
     new_product.tags = ",".join(data["tags"])
