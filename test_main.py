@@ -70,12 +70,12 @@ def test_list_all_items_success(mock_get_folders, mock_process):
         data = response.json()
         assert data["status"] == "success"
         assert data["processed"] == 2
-        assert data["successful"] == 1
-        assert data["failed"] == 1
-        assert len(data["results"]) == 2
-        assert data["results"][0] == {"folder": "folder1", "status": "success", "product_id": 111}
-        assert data["results"][1] == {"folder": "folder2", "status": "error", "error_msg": "Failed to upload folder2"}
+        assert data["message"] == "Successfully queued up 2 folders for processing"
         
+        # TestClient runs background tasks synchronously before returning response in tests
+        assert mock_process.call_count == 2
+        mock_process.assert_any_call("folder1")
+        mock_process.assert_any_call("folder2")
         mock_pushover.assert_called_once_with("❌ Error listing folder2: Failed to upload folder2")
 
 
