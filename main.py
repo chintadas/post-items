@@ -45,6 +45,7 @@ async def list_all_items(x_api_key: str = Header(None)):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     folders = get_pending_folders()
+    logger.info(f"Found {len(folders)} folders to process")
     if not folders:
         return {"status": "success", "message": "No pending folders found.", "processed": 0, "results": []}
 
