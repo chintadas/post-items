@@ -21,19 +21,25 @@ class PromptExperimentRequest(BaseModel):
     folder_name: str
     prompt: str
 
+is_processing = False
+
 async def process_folders_in_background(folders: list[str]):
-    for idx, folder_name in enumerate(folders, start=1):
-        try:
-            await process_folder_listing(folder_name)
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Error listing {folder_name}: {e}", exc_info=True)
+    global is_processing
+    try:
+        for idx, folder_name in enumerate(folders, start=1):
             try:
-                send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
-            except Exception as pe:
-                logger.error(f"Failed to send pushover notification: {pe}", exc_info=True)
-        finally:
-            logger.info(f"{idx}/{len(folders)} folder '{folder_name}' processed")
+                await process_folder_listing(folder_name)
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"Error listing {folder_name}: {e}", exc_info=True)
+                try:
+                    send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
+                except Exception as pe:
+                    logger.error(f"Failed to send pushover notification: {pe}", exc_info=True)
+            finally:
+                logger.info(f"{idx}/{len(folders)} folder '{folder_name}' processed")
+    finally:
+        is_processing = False
 
 # --- API Endpoints ---
 
@@ -58,11 +64,19 @@ async def list_all_items(background_tasks: BackgroundTasks, x_api_key: str = Hea
     if x_api_key != API_AUTH_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
+    global is_processing
+    if is_processing:
+        raise HTTPException(
+            status_code=409,
+            detail="A background task is already processing folders. Please try again later."
+        )
+
     folders = get_pending_folders()
     logger.info(f"Found {len(folders)} folders to process")
     if not folders:
         return {"status": "success", "message": "No pending folders found.", "processed": 0}
 
+    is_processing = True
     background_tasks.add_task(process_folders_in_background, folders)
 
     return {

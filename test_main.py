@@ -98,6 +98,17 @@ def test_list_all_items_unauthorized():
     assert response.json() == {"detail": "Unauthorized"}
 
 
+def test_list_all_items_already_processing():
+    import main
+    main.is_processing = True
+    try:
+        response = client.post("/list-all-items", headers=API_HEADERS)
+        assert response.status_code == 409
+        assert "already processing folders" in response.json()["detail"]
+    finally:
+        main.is_processing = False
+
+
 # --- Tests for /preview-listing ---
 
 @patch("main.preview_folder_listing_data", new_callable=AsyncMock)
