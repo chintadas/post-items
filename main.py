@@ -199,7 +199,7 @@ async def list_all_items(x_api_key: str = Header(None)):
     results = []
     success_count = 0
 
-    for folder_name in folders:
+    for idx, folder_name in enumerate(folders, start=1):
         try:
             folder_result = await process_folder_listing(folder_name)
             results.append({"folder": folder_name, **folder_result})
@@ -212,6 +212,8 @@ async def list_all_items(x_api_key: str = Header(None)):
             except Exception as pe:
                 logger.error(f"Failed to send pushover notification: {pe}", exc_info=True)
             results.append({"folder": folder_name, "status": "error", "error_msg": error_msg})
+        finally:
+            logger.info(f"{idx}/{len(folders)} folder '{folder_name}' processed")
 
     return {
         "status": "success",
