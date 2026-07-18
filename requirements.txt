@@ -6,3 +6,5 @@ shopifyapi
 python-dotenv
 requests
 Pillow
+pytest
+httpx
