@@ -103,8 +103,10 @@ def test_list_all_items_already_processing():
     main.is_processing = True
     try:
         response = client.post("/list-all-items", headers=API_HEADERS)
-        assert response.status_code == 409
-        assert "already processing folders" in response.json()["detail"]
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "already_running"
+        assert "already processing folders" in data["message"]
     finally:
         main.is_processing = False
 

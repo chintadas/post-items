@@ -66,10 +66,11 @@ async def list_all_items(background_tasks: BackgroundTasks, x_api_key: str = Hea
 
     global is_processing
     if is_processing:
-        raise HTTPException(
-            status_code=409,
-            detail="A background task is already processing folders. Please try again later."
-        )
+        return {
+            "status": "already_running",
+            "message": "A background task is already processing folders. Please try again later.",
+            "processed": 0,
+        }
 
     folders = get_pending_folders()
     logger.info(f"Found {len(folders)} folders to process")
