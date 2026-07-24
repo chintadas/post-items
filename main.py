@@ -26,9 +26,10 @@ is_processing = False
 async def process_folders_in_background(folders: list[str]):
     global is_processing
     try:
+        total_folders = len(folders)
         for idx, folder_name in enumerate(folders, start=1):
             try:
-                await process_folder_listing(folder_name)
+                await process_folder_listing(folder_name, item_index=idx, total_items=total_folders)
             except Exception as e:
                 error_msg = str(e)
                 logger.error(f"Error listing {folder_name}: {e}", exc_info=True)

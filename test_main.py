@@ -74,8 +74,8 @@ def test_list_all_items_success(mock_get_folders, mock_process):
         
         # TestClient runs background tasks synchronously before returning response in tests
         assert mock_process.call_count == 2
-        mock_process.assert_any_call("folder1")
-        mock_process.assert_any_call("folder2")
+        mock_process.assert_any_call("folder1", item_index=1, total_items=2)
+        mock_process.assert_any_call("folder2", item_index=2, total_items=2)
         mock_pushover.assert_called_once_with("❌ Error listing folder2: Failed to upload folder2")
 
 
@@ -150,3 +150,48 @@ def test_preview_listing_error(mock_preview):
     
     assert response.status_code == 200
     assert response.json() == {"status": "error", "error_msg": "Gemini API Quota Exceeded"}
+
+
+@pytest.mark.anyio
+@patch("services.listing_service.send_pushover")
+@patch("services.listing_service.get_shop_domain", return_value="test-store.myshopify.com")
+@patch("services.listing_service.move_folder_to_listed")
+@patch("services.listing_service.publish_product_to_all_channels", return_value=1)
+@patch("services.listing_service.activate_shopify_session_with_fresh_token")
+@patch("services.listing_service.shopify.Image")
+@patch("services.listing_service.shopify.Variant")
+@patch("services.listing_service.shopify.Product")
+@patch("services.listing_service.analyze_images_via_vlm", new_callable=AsyncMock)
+@patch("services.listing_service.get_video_paths_for_folder", return_value=[])
+@patch("services.listing_service.get_image_paths_for_folder", return_value=["img1.jpg"])
+async def test_process_folder_listing_pushover_message(
+    mock_images, mock_videos, mock_vlm, mock_product_cls, mock_variant_cls, mock_image_cls,
+    mock_shopify_session, mock_publish, mock_move, mock_shop_domain, mock_pushover
+):
+    from services.listing_service import process_folder_listing
+    mock_product = MagicMock()
+    mock_product.id = 999
+    mock_product.save.return_value = True
+    mock_product.variants = []
+    mock_product_cls.return_value = mock_product
+
+    mock_vlm.return_value = {
+        "title": "Vintage Silk Blouse",
+        "brand": "Gucci",
+        "description": "A beautiful blouse",
+        "size": "M",
+        "measurements": "20x30",
+        "material": "Silk",
+        "fit_and_features": "Relaxed fit",
+        "style_notes": "Chic",
+        "price": "99.99",
+        "tags": ["vintage", "silk"],
+        "product_category": "Apparel",
+    }
+
+    await process_folder_listing("test_folder", item_index=3, total_items=10)
+
+    mock_pushover.assert_called_once()
+    msg = mock_pushover.call_args[0][0]
+    assert "✅ 3/10 Published: Vintage Silk Blouse (Gucci) as a draft." in msg
+
