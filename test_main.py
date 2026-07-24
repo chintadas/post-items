@@ -193,5 +193,5 @@ async def test_process_folder_listing_pushover_message(
 
     mock_pushover.assert_called_once()
     msg = mock_pushover.call_args[0][0]
-    assert "✅ 3/10 Published: Vintage Silk Blouse (Gucci) as a draft." in msg
+    assert "✅ 3/10 Published: Vintage Silk Blouse as a draft." in msg
 

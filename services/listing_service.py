@@ -130,7 +130,7 @@ async def process_folder_listing(folder_name: str, item_index: int = 1, total_it
     shop_domain = get_shop_domain(SHOPIFY_SHOP_URL)
     store_name = shop_domain.split(".")[0]
     admin_url = f"https://admin.shopify.com/store/{store_name}/products/{new_product.id}"
-    msg = f"✅ {item_index}/{total_items} Published: {data['title']} ({data['brand']}) as a draft.\n{admin_url}"
+    msg = f"✅ {item_index}/{total_items} Published: {data['title']} as a draft.\n{admin_url}"
     send_pushover(msg)
     return {"status": "success", "product_id": new_product.id, "title": data["title"]}
 
