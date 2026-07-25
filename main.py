@@ -26,19 +26,22 @@ is_processing = False
 async def process_folders_in_background(folders: list[str]):
     global is_processing
     try:
-        total_folders = len(folders)
-        for idx, folder_name in enumerate(folders, start=1):
-            try:
-                await process_folder_listing(folder_name, item_index=idx, total_items=total_folders)
-            except Exception as e:
-                error_msg = str(e)
-                logger.error(f"Error listing {folder_name}: {e}", exc_info=True)
+        current_folders = folders
+        while current_folders:
+            total_folders = len(current_folders)
+            for idx, folder_name in enumerate(current_folders, start=1):
                 try:
-                    send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
-                except Exception as pe:
-                    logger.error(f"Failed to send pushover notification: {pe}", exc_info=True)
-            finally:
-                logger.info(f"{idx}/{len(folders)} folder '{folder_name}' processed")
+                    await process_folder_listing(folder_name, item_index=idx, total_items=total_folders)
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"Error listing {folder_name}: {e}", exc_info=True)
+                    try:
+                        send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
+                    except Exception as pe:
+                        logger.error(f"Failed to send pushover notification: {pe}", exc_info=True)
+                finally:
+                    logger.info(f"{idx}/{len(current_folders)} folder '{folder_name}' processed")
+            current_folders = get_pending_folders()
     finally:
         is_processing = False
 

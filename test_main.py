@@ -56,7 +56,7 @@ def test_list_item_error(mock_process, mock_pushover):
 @patch("main.process_folder_listing", new_callable=AsyncMock)
 @patch("main.get_pending_folders")
 def test_list_all_items_success(mock_get_folders, mock_process):
-    mock_get_folders.return_value = ["folder1", "folder2"]
+    mock_get_folders.side_effect = [["folder1", "folder2"], []]
     # Make folder1 succeed and folder2 fail
     mock_process.side_effect = [
         {"status": "success", "product_id": 111},
@@ -77,6 +77,25 @@ def test_list_all_items_success(mock_get_folders, mock_process):
         mock_process.assert_any_call("folder1", item_index=1, total_items=2)
         mock_process.assert_any_call("folder2", item_index=2, total_items=2)
         mock_pushover.assert_called_once_with("❌ Error listing folder2: Failed to upload folder2")
+
+
+@patch("main.process_folder_listing", new_callable=AsyncMock)
+@patch("main.get_pending_folders")
+def test_list_all_items_processes_newly_arrived_folders(mock_get_folders, mock_process):
+    # Initial request finds folder1. After folder1 is processed, another check finds folder2. Then no new folders.
+    mock_get_folders.side_effect = [["folder1"], ["folder2"], []]
+    mock_process.return_value = {"status": "success", "product_id": 100}
+
+    response = client.post("/list-all-items", headers=API_HEADERS)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["processed"] == 1  # Initial queued count
+
+    assert mock_process.call_count == 2
+    mock_process.assert_any_call("folder1", item_index=1, total_items=1)
+    mock_process.assert_any_call("folder2", item_index=1, total_items=1)
 
 
 @patch("main.get_pending_folders")
