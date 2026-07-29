@@ -27,7 +27,8 @@ async def process_folders_in_background(folders: list[str]):
     global is_processing
     try:
         current_folders = folders
-        while current_folders:
+        stop_processing = False
+        while current_folders and not stop_processing:
             total_folders = len(current_folders)
             for idx, folder_name in enumerate(current_folders, start=1):
                 try:
@@ -39,8 +40,15 @@ async def process_folders_in_background(folders: list[str]):
                         send_pushover(f"❌ Error listing {folder_name}: {error_msg}")
                     except Exception as pe:
                         logger.error(f"Failed to send pushover notification: {pe}", exc_info=True)
+                    
+                    if "429" in error_msg and "RESOURCE_EXHAUSTED" in error_msg:
+                        logger.error("Resource exhausted (429) encountered. Stopping further folder processing.")
+                        stop_processing = True
+                        break
                 finally:
                     logger.info(f"{idx}/{len(current_folders)} folder '{folder_name}' processed")
+            if stop_processing:
+                break
             current_folders = get_pending_folders()
     finally:
         is_processing = False

@@ -81,6 +81,25 @@ def test_list_all_items_success(mock_get_folders, mock_process):
 
 @patch("main.process_folder_listing", new_callable=AsyncMock)
 @patch("main.get_pending_folders")
+def test_list_all_items_stops_on_resource_exhausted(mock_get_folders, mock_process):
+    mock_get_folders.side_effect = [["folder1", "folder2"], ["folder3"]]
+    mock_process.side_effect = [
+        Exception("429 RESOURCE_EXHAUSTED: Quota exceeded"),
+        {"status": "success", "product_id": 222}
+    ]
+
+    with patch("main.send_pushover") as mock_pushover:
+        response = client.post("/list-all-items", headers=API_HEADERS)
+
+        assert response.status_code == 200
+        # Should stop immediately after folder1 error and not process folder2 or check pending folders again
+        assert mock_process.call_count == 1
+        mock_process.assert_called_once_with("folder1", item_index=1, total_items=2)
+        mock_pushover.assert_called_once_with("❌ Error listing folder1: 429 RESOURCE_EXHAUSTED: Quota exceeded")
+
+
+@patch("main.process_folder_listing", new_callable=AsyncMock)
+@patch("main.get_pending_folders")
 def test_list_all_items_processes_newly_arrived_folders(mock_get_folders, mock_process):
     # Initial request finds folder1. After folder1 is processed, another check finds folder2. Then no new folders.
     mock_get_folders.side_effect = [["folder1"], ["folder2"], []]
