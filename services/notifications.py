@@ -16,6 +16,6 @@ def send_pushover(message: str):
         response = requests.post(url, data=data, timeout=10)
         response.raise_for_status()
     except Exception as e:
-        logger.error(f"Failed to send Pushover notification: {e}", exc_info=True)
+        logger.error(f"Failed to send Pushover notification: {e}")
 
 
