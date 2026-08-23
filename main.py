@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 logging.basicConfig(
@@ -7,7 +8,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 
 from config import API_AUTH_KEY
@@ -71,7 +72,7 @@ async def list_item(folder_name: str, x_api_key: str = Header(None)):
         return {"status": "error", "error_msg": error_msg}
 
 @app.post("/list-all-items")
-async def list_all_items(background_tasks: BackgroundTasks, x_api_key: str = Header(None)):
+async def list_all_items(x_api_key: str = Header(None)):
     # 1. Simple Auth Check
     if x_api_key != API_AUTH_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
@@ -90,7 +91,7 @@ async def list_all_items(background_tasks: BackgroundTasks, x_api_key: str = Hea
         return {"status": "success", "message": "No pending folders found.", "processed": 0}
 
     is_processing = True
-    background_tasks.add_task(process_folders_in_background, folders)
+    asyncio.create_task(process_folders_in_background(folders))
 
     return {
         "status": "success",
