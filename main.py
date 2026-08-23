@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 
 logging.basicConfig(
     level=logging.INFO,
@@ -91,7 +92,11 @@ async def list_all_items(x_api_key: str = Header(None)):
         return {"status": "success", "message": "No pending folders found.", "processed": 0}
 
     is_processing = True
-    asyncio.create_task(process_folders_in_background(folders))
+    thread = threading.Thread(
+        target=lambda: asyncio.run(process_folders_in_background(folders)),
+        daemon=True,
+    )
+    thread.start()
 
     return {
         "status": "success",
@@ -117,4 +122,5 @@ async def preview_listing(payload: PromptExperimentRequest, x_api_key: str = Hea
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
