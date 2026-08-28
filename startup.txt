@@ -1,0 +1,22 @@
+================================================================================
+Snazzy Boutique Listing Agent - Startup & Operation Instructions
+================================================================================
+
+1. START THE PYTHON SERVER
+--------------------------------------------------------------------------------
+Open a terminal tab and navigate to the project directory, then run the FastAPI server:
+
+    cd agents/post-items
+    python3 main.py
+
+* The server will run on http://0.0.0.0:8000 (auto-reloads on code changes).
+
+
+2. START NGROK TUNNEL (Keep Awake with Caffeinate)
+--------------------------------------------------------------------------------
+Open a separate terminal tab and start ngrok using `caffeinate` to prevent the Mac
+from sleeping while the tunnel is active:
+
+    caffeinate ngrok http 8000
+
+* Note the public forwarding URL displayed by ngrok (e.g., https://<your-subdomain>.ngrok-free.dev).
