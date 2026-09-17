@@ -1,1 +1,11 @@
-<div><p>These comfortable Torrid pants feature a versatile light beige shade, an elasticized drawstring waist, and stylish front seam detailing. Crafted from a soft cotton-blend with a touch of stretch, they offer both comfort and casual style for everyday wear.</p></div><p><strong>Size:</strong> 1</p><p><strong>Approximate Measurements:</strong> Waist: 18 in<br>Inseam: 25 in<br>Rise: 13 in<br>Total Length: 37 in</p><p><strong>Material:</strong> 98% Cotton, 2% Spandex</p><div><strong>Fit & Features:</strong> <ul><li>Comfortable elastic waistband with adjustable drawstring</li><li>Convenient front slash pockets and back patch pockets</li><li>Flattering vertical center seam detail on the front of each leg</li><li>Soft stretch-cotton blend fabric</li></ul></div><div><strong>Style Notes:</strong> <p>Perfect for a casual chic aesthetic, style these pants with a tucked-in tank top, denim jacket, and clean white sneakers.</p></div>
+<div>Brighten your wardrobe with this breezy Talbots blouse featuring pastel multi-color stripes and playful yellow clip dot detailing. Designed with a ruffled split V-neckline and smocked cuffs, it offers an effortless and relaxed feminine silhouette.</div>
+<div></div>
+<div><strong>Size:</strong> 2X</div>
+<div></div>
+<div><strong>Approximate Measurements:</strong> Pit to pit: 26 in<br>Length: 29 in<br>Sleeve length: 24 in</div>
+<div></div>
+<div><strong>Material:</strong> 100% Cotton</div>
+<div></div>
+<div><strong>Fit & Features:</strong> Relaxed, easy fit<br>Ruffle-trimmed split V-neckline<br>Long sleeves with smocked elastic cuffs<br>Gathers at neckline and pleated back yoke<br>Textured fil coupé clip dot woven stripe pattern</div>
+<div></div>
+<div><strong>Style Notes:</strong> Pair with white linen trousers or cropped denim for a sunny weekend look.<br>Elevate with gold jewelry and comfortable slide sandals for relaxed coastal style.</div>

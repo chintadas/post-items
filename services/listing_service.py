@@ -38,19 +38,16 @@ async def process_folder_listing(folder_name: str, item_index: int = 1, total_it
     new_product.title = data["title"]
     body_sections = [
         f"<div>{data['description']}</div>",
-        f"<p><strong>Size:</strong> {data['size']}</p>",
-        f"<p><strong>Approximate Measurements:</strong> {data['measurements']}</p>",
-        f"<p><strong>Material:</strong> {data['material']}</p>",
-    ]
-    
-    body_sections.extend([
+        f"<div><strong>Size:</strong> {data['size']}</div>",
+        f"<div><strong>Approximate Measurements:</strong> {data['measurements']}</div>",
+        f"<div><strong>Material:</strong> {data['material']}</div>",
         f"<div><strong>Fit & Features:</strong> {data['fit_and_features']}</div>",
         f"<div><strong>Style Notes:</strong> {data['style_notes']}</div>",
-        f"<div class='usually-ships'>Usually ships within 24 hours.</div>"
-    ])
+        f"<div class='usually-ships'>Usually ships within 24 hours.</div>",
+    ]
     if data.get("retail"):
-        body_sections.append(f"<p><strong>Retails for:</strong> {data['retail']}</p>")
-    new_product.body_html = "\n\n".join(body_sections)
+        body_sections.append(f"<div><strong>Retails for:</strong> {data['retail']}</div>")
+    new_product.body_html = "\n<div></div>\n".join(body_sections)
     new_product.vendor = data["brand"]
     new_product.tags = ",".join(data["tags"])
     new_product.status = "draft"

@@ -5,7 +5,7 @@ Return exactly one valid JSON object with exactly these keys (no extras):
 - description: Shopify-ready item description using HTML tags only for formatting. Do not use Markdown. Maximum 2 sentences
 - brand: Found on tag, stamp, engraving, or logo.
 - size: Sizing specification. For clothing, use standard sizes (e.g. S, M, L, XL) or numerical sizes. For shoes, use standard shoe sizes (e.g. "US 8" or "EU 39"). For one-size accessories (such as bags, hats, sunglasses, scarves), use exactly "One Size".
-- measurements: Detailed flat lay measurements. For clothing, always specify length (including total length/outseam for pants, trousers, shorts, and skirts) in addition to other relevant measurements like pit-to-pit, waist, inseam, and rise. For bags, specify width, height, depth, and strap drop. For shoes, specify insole length, heel height, etc. Use html tags if needed.
+- measurements: Detailed flat lay measurements. For clothing, always specify length (including total length/outseam for pants, trousers, shorts, and skirts) in addition to other relevant measurements like pit-to-pit, waist, inseam, and rise. For bags, specify width, height, depth, and strap drop. For shoes, specify insole length, heel height, etc. Put each measurement on a separate line separated by <br> tags. Do not use bullet points, numbered items, or paragraph tags (<p>).
 - material: From care label, material composition, or stamps (e.g. leather, canvas, 100% cotton).
 - target_gender: Female, Male, or Unisex.
 - product_category: Shopify product category based on image, description and type of product. Follow the standard Shopify taxonomy breadcrumb. Examples:
@@ -15,8 +15,8 @@ Return exactly one valid JSON object with exactly these keys (no extras):
   - Apparel & Accessories > Shoes
   - Apparel & Accessories > Clothing Accessories > Hats
   - Apparel & Accessories > Clothing Accessories > Sunglasses
-- fit_and_features: brief and use html tags if needed.
-- style_notes: brief and use html tags if needed.
+- fit_and_features: Brief. For multiple items, place each on a separate line using <br> tags. Do not use bullet points, numbered items, or paragraph tags (<p>).
+- style_notes: Brief. For multiple items, place each on a separate line using <br> tags. Do not use bullet points, numbered items, or paragraph tags (<p>).
 - tags: Array of 5 styling vibes (for example: "vintage", "dark academia").
 - price: Suggested resale price based on brand and condition.
 - retail: Retail price of the item.
@@ -24,4 +24,5 @@ Return exactly one valid JSON object with exactly these keys (no extras):
 Output requirements:
 - Return JSON only (no prose, no code fences).
 - Ensure the JSON is parseable.
-- IMPORTANT: Use raw HTML tags (e.g. <p>, <ul>, <li>). Do NOT use HTML entities or escaped characters like &lt; or &gt;.
+- For fields with multiple items or multiple lines (such as measurements, fit_and_features, style_notes), format them simply on separate lines using <br> tags. Do NOT use bullet points (no <ul>, <li>, or bullet characters), numbered lists, or paragraph tags (<p>).
+- IMPORTANT: Use raw HTML tags (e.g. <br>). Do NOT use HTML entities or escaped characters like &lt; or &gt;.

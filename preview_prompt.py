@@ -10,13 +10,13 @@ from dotenv import load_dotenv
 def build_body_html(product_data: dict) -> str:
     body_sections = [
         f"<div>{product_data.get('description', '')}</div>",
-        f"<p><strong>Size:</strong> {product_data.get('size', '')}</p>",
-        f"<p><strong>Approximate Measurements:</strong> {product_data.get('measurements', '')}</p>",
-        f"<p><strong>Material:</strong> {product_data.get('material', '')}</p>",
+        f"<div><strong>Size:</strong> {product_data.get('size', '')}</div>",
+        f"<div><strong>Approximate Measurements:</strong> {product_data.get('measurements', '')}</div>",
+        f"<div><strong>Material:</strong> {product_data.get('material', '')}</div>",
         f"<div><strong>Fit & Features:</strong> {product_data.get('fit_and_features', '')}</div>",
         f"<div><strong>Style Notes:</strong> {product_data.get('style_notes', '')}</div>",
     ]
-    return "".join(body_sections)
+    return "\n<div></div>\n".join(body_sections)
 
 
 def parse_args() -> argparse.Namespace:
