@@ -312,6 +312,36 @@ def set_inventory_quantity(inventory_item_id: int, quantity: int = 1) -> None:
     if user_errors:
         raise ValueError(f"Inventory user errors: {user_errors}")
 
+def update_inventory_item_customs(inventory_item_id: int, country_code: str = "US") -> None:
+    """Sets the customs information (Country of origin) on the Shopify InventoryItem."""
+    inventory_item_gid = f"gid://shopify/InventoryItem/{inventory_item_id}"
+    mutation = """
+    mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+      inventoryItemUpdate(id: $id, input: $input) {
+        inventoryItem {
+          id
+          countryCodeOfOrigin
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    variables = {
+        "id": inventory_item_gid,
+        "input": {
+            "countryCodeOfOrigin": country_code
+        }
+    }
+    payload = run_graphql_query(mutation, variables)
+    user_errors = payload.get("data", {}).get("inventoryItemUpdate", {}).get("userErrors", [])
+    if user_errors:
+        logger.warning(f"Failed to set country of origin on inventory item {inventory_item_id}: {user_errors}")
+    else:
+        logger.info(f"Successfully set country of origin to '{country_code}' for inventory item {inventory_item_id}")
+
 def update_product_category(product_id: int, category_string: str) -> None:
     """Sets the Shopify product category (taxonomy) using the modern 2026-04 GraphQL API."""
     if not category_string:
@@ -528,10 +558,26 @@ def resolve_category_taxo_rule(category_string: str) -> dict:
         "skip_size": False,
     }
 
-def set_category_metafields(product_id: int, gender: str, size: str, category_string: str = None, retail: str = None) -> None:
-    """Sets the Shopify category metafields (e.g. Target Gender, Size/Shoe Size) and retail price using the GraphQL API."""
-    if not gender and not size and not retail:
+def set_category_metafields(
+    product_id: int,
+    gender: str = None,
+    size: str = None,
+    category_string: str = None,
+    retail: str = None,
+    department: str = None,
+    source: str = "Preloved",
+) -> None:
+    """Sets the Shopify category metafields (e.g. Target Gender, Size/Shoe Size), custom department/source, and retail price using the GraphQL API."""
+    if not gender and not size and not retail and not department and not source:
         return
+
+    # Derive gender from department if gender wasn't explicitly provided
+    if not gender and department:
+        dept_lower = department.lower()
+        if "women" in dept_lower:
+            gender = "Female"
+        elif "unisex" in dept_lower or "teen" in dept_lower:
+            gender = "Unisex"
 
     product_gid = f"gid://shopify/Product/{product_id}"
 
@@ -586,6 +632,28 @@ def set_category_metafields(product_id: int, gender: str, size: str, category_st
             "type": "single_line_text_field"
         })
         logger.info(f"Adding retail price metafield: {retail}")
+
+    # 4. Add Custom Department Metafield
+    if department:
+        metafields.append({
+            "ownerId": product_gid,
+            "namespace": "custom",
+            "key": "department",
+            "value": str(department),
+            "type": "single_line_text_field"
+        })
+        logger.info(f"Adding department metafield: {department}")
+
+    # 5. Add Custom Source Metafield
+    if source:
+        metafields.append({
+            "ownerId": product_gid,
+            "namespace": "custom",
+            "key": "source",
+            "value": str(source),
+            "type": "single_line_text_field"
+        })
+        logger.info(f"Adding source metafield: {source}")
 
     if not metafields:
         return

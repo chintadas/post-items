@@ -233,3 +233,113 @@ async def test_process_folder_listing_pushover_message(
     msg = mock_pushover.call_args[0][0]
     assert "✅ 3/10 Published: Vintage Silk Blouse as a draft." in msg
 
+
+def test_update_inventory_item_customs():
+    from services.shopify import update_inventory_item_customs
+    with patch("services.shopify.run_graphql_query") as mock_graphql:
+        mock_graphql.return_value = {
+            "data": {
+                "inventoryItemUpdate": {
+                    "inventoryItem": {"id": "gid://shopify/InventoryItem/123", "countryCodeOfOrigin": "US"},
+                    "userErrors": []
+                }
+            }
+        }
+        update_inventory_item_customs(123, "US")
+        mock_graphql.assert_called_once()
+        query, variables = mock_graphql.call_args[0]
+        assert variables["id"] == "gid://shopify/InventoryItem/123"
+        assert variables["input"]["countryCodeOfOrigin"] == "US"
+
+
+def test_set_category_metafields_department_and_source():
+    from services.shopify import set_category_metafields
+    with patch("services.shopify.run_graphql_query") as mock_graphql, \
+         patch("services.shopify.resolve_metaobject_gid", return_value=None):
+        mock_graphql.return_value = {
+            "data": {
+                "productUpdate": {
+                    "product": {"id": "gid://shopify/Product/999"},
+                    "userErrors": []
+                }
+            }
+        }
+        set_category_metafields(
+            product_id=999,
+            department="Women",
+            source="Preloved",
+            size=None,
+            retail=None,
+        )
+        mock_graphql.assert_called_once()
+        _, variables = mock_graphql.call_args[0]
+        metafields = variables["input"]["metafields"]
+        keys = {(m["namespace"], m["key"]): m["value"] for m in metafields}
+        assert keys.get(("custom", "department")) == "Women"
+        assert keys.get(("custom", "source")) == "Preloved"
+
+
+@pytest.mark.anyio
+@patch("services.listing_service.send_pushover")
+@patch("services.listing_service.get_shop_domain", return_value="test-store.myshopify.com")
+@patch("services.listing_service.move_folder_to_listed")
+@patch("services.listing_service.publish_product_to_all_channels", return_value=1)
+@patch("services.listing_service.activate_shopify_session_with_fresh_token")
+@patch("services.listing_service.shopify.Image")
+@patch("services.listing_service.shopify.Variant")
+@patch("services.listing_service.shopify.Product")
+@patch("services.listing_service.update_inventory_item_customs")
+@patch("services.listing_service.set_inventory_quantity")
+@patch("services.listing_service.update_product_category")
+@patch("services.listing_service.set_category_metafields")
+@patch("services.listing_service.analyze_images_via_vlm", new_callable=AsyncMock)
+@patch("services.listing_service.get_video_paths_for_folder", return_value=[])
+@patch("services.listing_service.get_image_paths_for_folder", return_value=["img1.jpg"])
+async def test_process_folder_listing_department_and_source_tags(
+    mock_images, mock_videos, mock_vlm, mock_set_metafields, mock_update_category,
+    mock_set_inventory, mock_customs, mock_product_cls, mock_variant_cls, mock_image_cls,
+    mock_shopify_session, mock_publish, mock_move, mock_shop_domain, mock_pushover
+):
+    from services.listing_service import process_folder_listing
+    mock_variant = MagicMock()
+    mock_variant.inventory_item_id = 456
+    mock_variant_cls.return_value = mock_variant
+
+    mock_product = MagicMock()
+    mock_product.id = 1001
+    mock_product.save.return_value = True
+    mock_product_cls.return_value = mock_product
+
+    mock_vlm.return_value = {
+        "title": "Chic Top",
+        "brand": "Zara",
+        "description": "A chic top",
+        "size": "S",
+        "measurements": "18x24",
+        "material": "Cotton",
+        "fit_and_features": "Fitted",
+        "style_notes": "Modern",
+        "price": "49.99",
+        "tags": ["trendy", "summer"],
+        "product_category": "Apparel & Accessories > Clothing > Clothing Tops",
+        "department": "Women",
+    }
+
+    await process_folder_listing("test_folder")
+
+    # Check tags contain Preloved and Department
+    assert "Preloved" in mock_product.tags
+    assert "Source: Preloved" in mock_product.tags
+    assert "Women" in mock_product.tags
+    assert "Department: Women" in mock_product.tags
+
+    # Check update_inventory_item_customs was called with "US"
+    mock_customs.assert_called_once_with(456, "US")
+
+    # Check set_category_metafields was called with department and source
+    mock_set_metafields.assert_called_once()
+    kwargs = mock_set_metafields.call_args[1]
+    assert kwargs["department"] == "Women"
+    assert kwargs["source"] == "Preloved"
+
+

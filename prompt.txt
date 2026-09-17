@@ -7,6 +7,7 @@ Return exactly one valid JSON object with exactly these keys (no extras):
 - size: Sizing specification. For clothing, use standard sizes (e.g. S, M, L, XL) or numerical sizes. For shoes, use standard shoe sizes (e.g. "US 8" or "EU 39"). For one-size accessories (such as bags, hats, sunglasses, scarves), use exactly "One Size".
 - measurements: Detailed flat lay measurements. For clothing, always specify length (including total length/outseam for pants, trousers, shorts, and skirts) in addition to other relevant measurements like pit-to-pit, waist, inseam, and rise. For bags, specify width, height, depth, and strap drop. For shoes, specify insole length, heel height, etc. Put each measurement on a separate line separated by <br> tags. Do not use bullet points, numbered items, or paragraph tags (<p>).
 - material: From care label, material composition, or stamps (e.g. leather, canvas, 100% cotton).
+- department: Target department. Must be exactly one of: "Women", "Teens", or "Unisex Adults".
 - target_gender: Female, Male, or Unisex.
 - product_category: Shopify product category based on image, description and type of product. Follow the standard Shopify taxonomy breadcrumb. Examples:
   - Apparel & Accessories > Clothing > Clothing Tops

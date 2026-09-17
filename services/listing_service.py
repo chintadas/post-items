@@ -13,6 +13,7 @@ from services.gemini import analyze_images_via_vlm
 from services.shopify import (
     activate_shopify_session_with_fresh_token,
     set_inventory_quantity,
+    update_inventory_item_customs,
     upload_videos_to_shopify,
     publish_product_to_all_channels,
     get_shop_domain,
@@ -49,7 +50,12 @@ async def process_folder_listing(folder_name: str, item_index: int = 1, total_it
         body_sections.append(f"<div><strong>Retails for:</strong> {data['retail']}</div>")
     new_product.body_html = "\n<div></div>\n".join(body_sections)
     new_product.vendor = data["brand"]
-    new_product.tags = ",".join(data["tags"])
+    product_tags = list(data.get("tags", []))
+    product_tags.extend(["Preloved", "Source: Preloved"])
+    department = data.get("department")
+    if department:
+        product_tags.extend([department, f"Department: {department}"])
+    new_product.tags = ",".join(product_tags)
     new_product.status = "draft"
     new_product.options = [{"name": "Size"}]
 
@@ -68,25 +74,34 @@ async def process_folder_listing(folder_name: str, item_index: int = 1, total_it
     # Setting inventory_quantity directly on the variant is deprecated in newer APIs,
     # so we explicitly set it using the GraphQL mutation.
     if new_product.variants and getattr(new_product.variants[0], "inventory_item_id", None):
+        inv_item_id = new_product.variants[0].inventory_item_id
         try:
-            set_inventory_quantity(new_product.variants[0].inventory_item_id, 1)
+            set_inventory_quantity(inv_item_id, 1)
             logger.info("Set inventory quantity to 1 for variant.")
         except Exception as e:
             logger.warning(f"Failed to set inventory quantity: {e}")
 
-    # Set the Shopify product category (standardized taxonomy)
         try:
-            update_product_category(new_product.id, data["product_category"])
-            # After category is set, we can set the specific category metafields
-            set_category_metafields(
-                new_product.id,
-                data.get("target_gender"),
-                data.get("size"),
-                data["product_category"],
-                data.get("retail")
-            )
+            update_inventory_item_customs(inv_item_id, "US")
+            logger.info("Set country of origin to 'US' for variant inventory item.")
         except Exception as e:
-            logger.warning(f"Failed to set Shopify product category or metafields: {e}")
+            logger.warning(f"Failed to set country of origin on inventory item: {e}")
+
+    # Set the Shopify product category (standardized taxonomy)
+    try:
+        update_product_category(new_product.id, data["product_category"])
+        # After category is set, we can set the specific category metafields
+        set_category_metafields(
+            product_id=new_product.id,
+            gender=data.get("target_gender"),
+            size=data.get("size"),
+            category_string=data["product_category"],
+            retail=data.get("retail"),
+            department=data.get("department"),
+            source="Preloved",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to set Shopify product category or metafields: {e}")
 
     # Add images sequentially after product creation
     # Attempting to add many images in the initial product.save() 
