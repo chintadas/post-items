@@ -365,7 +365,7 @@ def update_product_category(product_id: int, category_string: str) -> None:
     taxonomy_query = """
     query ResolveTaxonomy($search: String!) {
       taxonomy {
-        categories(first: 1, search: $search) {
+        categories(first: 5, search: $search) {
           nodes {
             id
             fullName
@@ -375,24 +375,34 @@ def update_product_category(product_id: int, category_string: str) -> None:
     }
     """
 
+    _CHILDREN_KEYWORDS = ("Baby", "Children")
+
     def search_taxonomy(term):
+        """Returns the first result that is NOT a Baby/Children's category."""
         if not term: return None
         try:
             payload = run_graphql_query(taxonomy_query, {"search": term})
             nodes = payload.get("data", {}).get("taxonomy", {}).get("categories", {}).get("nodes", [])
-            return nodes[0] if nodes else None
+            for node in nodes:
+                full_name = node.get("fullName", "")
+                if not any(kw in full_name for kw in _CHILDREN_KEYWORDS):
+                    return node
+            # All results were children's categories — log and return None to try next fallback
+            if nodes:
+                logger.warning(f"All taxonomy results for '{term}' were Baby/Children's categories; skipping.")
+            return None
         except ValueError as e:
             logger.warning(f"Taxonomy query error for '{term}': {e}")
             return None
 
     # Try 1: Full AI-generated breadcrumb
     target_node = search_taxonomy(category_string)
-    
+
     # Try 2: Leaf category name
     if not target_node and " > " in category_string:
         leaf = category_string.split(" > ")[-1].strip()
         target_node = search_taxonomy(leaf)
-        
+
     # Try 3: Product title
     if not target_node:
         target_node = search_taxonomy(title)

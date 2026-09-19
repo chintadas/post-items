@@ -9,8 +9,9 @@ Return exactly one valid JSON object with exactly these keys (no extras):
 - material: From care label, material composition, or stamps (e.g. leather, canvas, 100% cotton).
 - department: Target department. Must be exactly one of: "Women", "Teens", or "Unisex Adults".
 - target_gender: Female, Male, or Unisex.
-- product_category: Shopify product category based on image, description and type of product. Follow the standard Shopify taxonomy breadcrumb. Examples:
+- product_category: Shopify product category based on image, description and type of product. Follow the standard Shopify taxonomy breadcrumb. NEVER use Baby & Children's categories (e.g. anything under "Baby & Children's Clothing"). Always pick the adult or Women's equivalent. Examples:
   - Apparel & Accessories > Clothing > Clothing Tops
+  - Apparel & Accessories > Clothing > Tops > Shirts & Tops (for shirts/tops, prefer a Women's or adult path)
   - Apparel & Accessories > Clothing > Outerwear > Coats & Jackets
   - Apparel & Accessories > Handbags, Wallets & Cases > Handbags
   - Apparel & Accessories > Shoes
