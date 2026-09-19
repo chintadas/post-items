@@ -40,10 +40,10 @@ async def process_folder_listing(folder_name: str, item_index: int = 1, total_it
     body_sections = [
         f"<div>{data['description']}</div>",
         f"<div><strong>Size:</strong> {data['size']}</div>",
-        f"<div><strong>Approximate Measurements:</strong> {data['measurements']}</div>",
-        f"<div><strong>Material:</strong> {data['material']}</div>",
-        f"<div><strong>Fit & Features:</strong> {data['fit_and_features']}</div>",
-        f"<div><strong>Style Notes:</strong> {data['style_notes']}</div>",
+        f"<div><strong>Approximate Measurements:</strong></div><div>{data['measurements']}</div>",
+        f"<div><strong>Material:</strong></div><div>{data['material']}</div>",
+        f"<div><strong>Fit & Features:</strong></div><div>{data['fit_and_features']}</div>",
+        f"<div><strong>Style Notes:</strong></div><div>{data['style_notes']}</div>",
         f"<div class='usually-ships'>Usually ships within 24 hours.</div>",
     ]
     if data.get("retail"):
