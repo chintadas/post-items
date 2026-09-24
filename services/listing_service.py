@@ -59,9 +59,10 @@ async def process_folder_listing(folder_name: str, item_index: int = 1, total_it
     new_product.status = "draft"
     new_product.options = [{"name": "Size"}]
 
+    suggested_price = round(float(data["price"]) - 0.01, 2)
     variant = shopify.Variant(
         {
-            "price": data["price"],
+            "price": f"{suggested_price:.2f}",
             "option1": data["size"],
             "inventory_management": "shopify",
         }
