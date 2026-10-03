@@ -375,21 +375,21 @@ def update_product_category(product_id: int, category_string: str) -> None:
     }
     """
 
-    _CHILDREN_KEYWORDS = ("Baby", "Children")
+    _EXCLUDED_CATEGORY_KEYWORDS = ("Baby", "Children", "Maternity")
 
     def search_taxonomy(term):
-        """Returns the first result that is NOT a Baby/Children's category."""
+        """Returns the first result that is NOT a Baby/Children's/Maternity category."""
         if not term: return None
         try:
             payload = run_graphql_query(taxonomy_query, {"search": term})
             nodes = payload.get("data", {}).get("taxonomy", {}).get("categories", {}).get("nodes", [])
             for node in nodes:
                 full_name = node.get("fullName", "")
-                if not any(kw in full_name for kw in _CHILDREN_KEYWORDS):
+                if not any(kw in full_name for kw in _EXCLUDED_CATEGORY_KEYWORDS):
                     return node
-            # All results were children's categories — log and return None to try next fallback
+            # All results were excluded categories — log and return None to try next fallback
             if nodes:
-                logger.warning(f"All taxonomy results for '{term}' were Baby/Children's categories; skipping.")
+                logger.warning(f"All taxonomy results for '{term}' were excluded categories (Baby/Children/Maternity); skipping.")
             return None
         except ValueError as e:
             logger.warning(f"Taxonomy query error for '{term}': {e}")
