@@ -22,24 +22,10 @@ from sleeping while the tunnel is active:
 * Note the public forwarding URL displayed by ngrok (e.g., https://<your-subdomain>.ngrok-free.dev).
 
 
-# Start Python server (one terminal)
-================================================================================
-Listing Agent Quick Start & Maintenance
-================================================================================
-
-1. QUICK START (First Time)
-----------------------------
-# Start Python server (one terminal)
-cd agents/post-items
-python3 main.py
-
-# Start ngrok (second terminal)
-caffeinate ngrok http 8000
-
-# Test the prompt
+Testing the prompt:
 python3 preview_prompt.py --folder "listed/testing/Talbots" --prompt-file prompt.txt
 
-# Test listing (re-processes folders by moving them back to parent)
-# Move folder from listed -> parent:
+Testing the listing agent by re-processing a processed item:
+1. Move the folder from listed to parent
 gcloud storage mv gs://snazzys-boutique-inventory/listed/7_17-14 gs://snazzys-boutique-inventory/7_17-14
 # Then trigger listing (server auto-reloads)
