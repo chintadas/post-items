@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import uuid
-from typing import List
+from typing import List, Optional
 from urllib.parse import urlparse
 import requests
 import shopify
@@ -213,10 +213,8 @@ def upload_videos_to_shopify(product_id: int, video_paths: List[str]) -> None:
         )
         raise ValueError(f"Shopify media user errors: {media_user_errors}")
 
-def publish_product_to_all_channels(product_id: int) -> int:
-    """Publishes a product to all available Shopify sales channels."""
-    product_gid = f"gid://shopify/Product/{product_id}"
-
+def fetch_publications() -> list:
+    """Returns all Shopify publications (sales channels) as a list of {id, name} dicts."""
     publications_query = """
     query GetPublications {
       publications(first: 250) {
@@ -228,8 +226,15 @@ def publish_product_to_all_channels(product_id: int) -> int:
     }
     """
     query_payload = run_graphql_query(publications_query)
-    publications = query_payload.get("data", {}).get("publications", {}).get("nodes", [])
-    publication_ids = [publication.get("id") for publication in publications if publication.get("id")]
+    return query_payload.get("data", {}).get("publications", {}).get("nodes", [])
+
+def publish_product_to_all_channels(product_id: int, publication_ids: Optional[List[str]] = None) -> int:
+    """Publishes a product to all available Shopify sales channels.
+    Pass publication_ids to avoid re-fetching the publications for every product."""
+    product_gid = f"gid://shopify/Product/{product_id}"
+
+    if publication_ids is None:
+        publication_ids = [publication.get("id") for publication in fetch_publications() if publication.get("id")]
     if not publication_ids:
         logger.info("No Shopify publications found; skipping channel publishing.")
         return 0
@@ -780,3 +785,101 @@ def delete_archived_products(dry_run: bool = True) -> dict:
             failed.append({"id": product["id"], "title": product["title"], "error": str(e)})
 
     return {"found": len(archived), "deleted": deleted, "failed": failed}
+
+def publish_unpublished_active_products(dry_run: bool = True) -> dict:
+    """Publishes every ACTIVE product that has no sales channels to all channels.
+    With dry_run=True, only lists the products that would be published."""
+    publications = fetch_publications()
+    logger.info(
+        f"Shop has {len(publications)} publications: "
+        + ", ".join(f"{p.get('name')} ({p.get('id')})" for p in publications)
+    )
+    if not publications:
+        logger.info("No Shopify publications found; nothing to publish to.")
+        return {"found": 0, "published": 0, "failed": [], "would_publish": []}
+
+    # Narrow server-side to ACTIVE products not published on the Online Store. A product on no channel
+    # at all is necessarily in this set, so it is a safe superset; the per-product publishedOnPublication
+    # fields below then verify each result against every publication.
+    search = 'status:active published_status:unpublished'
+    logger.info(f"Product search string: {search}")
+
+    published_fields = "\n".join(
+        f'          pub{i}: publishedOnPublication(publicationId: "{p["id"]}")'
+        for i, p in enumerate(publications)
+    )
+    list_query = f"""
+    query GetActiveProducts($cursor: String, $search: String) {{
+      products(first: 100, after: $cursor, query: $search) {{
+        nodes {{
+          id
+          title
+          status
+{published_fields}
+        }}
+        pageInfo {{
+          hasNextPage
+          endCursor
+        }}
+      }}
+    }}
+    """
+
+    unpublished = []
+    cursor = None
+    page = 0
+    returned_total = 0
+    published_on_counts = {}  # number of publications a product is on -> products
+    while True:
+        page += 1
+        payload = run_graphql_query(list_query, {"cursor": cursor, "search": search})
+        if payload.get("errors"):
+            logger.error(f"GraphQL errors on page {page}: {payload['errors']}")
+        products = payload.get("data", {}).get("products", {})
+        nodes = products.get("nodes", [])
+        returned_total += len(nodes)
+        page_matches = []
+        for p in nodes:
+            on_count = sum(1 for i in range(len(publications)) if p.get(f"pub{i}"))
+            published_on_counts[on_count] = published_on_counts.get(on_count, 0) + 1
+            if p.get("status") == "ACTIVE" and on_count == 0:
+                page_matches.append(p)
+        logger.debug(
+            f"Page {page}: {len(nodes)} products returned, "
+            f"{len(page_matches)} not on any publication"
+        )
+        unpublished.extend(page_matches)
+        page_info = products.get("pageInfo", {})
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info.get("endCursor")
+
+    logger.info(
+        f"Scanned {returned_total} active products over {page} page(s). "
+        f"Publications per product (count -> products): {published_on_counts}"
+    )
+    for p in unpublished:
+        logger.info(f"Unpublished: {p['id']} ({p['title']})")
+    logger.info(f"Found {len(unpublished)} active products without sales channels (dry_run={dry_run})")
+    if dry_run:
+        return {
+            "found": len(unpublished),
+            "published": 0,
+            "failed": [],
+            "would_publish": [{"id": p["id"], "title": p["title"]} for p in unpublished],
+        }
+
+    published = 0
+    failed = []
+    publication_ids = [p["id"] for p in publications if p.get("id")]
+    for product in unpublished:
+        try:
+            numeric_id = int(product["id"].rsplit("/", 1)[-1])
+            publish_product_to_all_channels(numeric_id, publication_ids)
+            published += 1
+            logger.info(f"Published product {product['id']} ({product['title']}) to all channels")
+        except Exception as e:
+            logger.error(f"Failed to publish {product['id']}: {e}", exc_info=True)
+            failed.append({"id": product["id"], "title": product["title"], "error": str(e)})
+
+    return {"found": len(unpublished), "published": published, "failed": failed}

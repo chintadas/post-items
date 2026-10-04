@@ -291,6 +291,177 @@ def test_delete_archived_products_skips_non_archived_and_reports_failures(mock_g
     assert result["failed"][0]["id"] == "gid://shopify/Product/1"
 
 
+# --- Tests for POST /publish-unpublished-items ---
+
+@patch("main.publish_unpublished_active_products")
+def test_publish_unpublished_items_defaults_to_dry_run(mock_publish):
+    mock_publish.return_value = {"found": 1, "published": 0, "failed": [], "would_publish": [{"id": "gid://shopify/Product/1", "title": "A"}]}
+
+    response = client.post("/publish-unpublished-items", headers=API_HEADERS)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["dry_run"] is True
+    assert data["found"] == 1
+    mock_publish.assert_called_once_with(True)
+
+
+@patch("main.publish_unpublished_active_products")
+def test_publish_unpublished_items_real_run(mock_publish):
+    mock_publish.return_value = {"found": 2, "published": 2, "failed": []}
+
+    response = client.post("/publish-unpublished-items?dry_run=false", headers=API_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "success", "dry_run": False, "found": 2, "published": 2, "failed": []}
+    mock_publish.assert_called_once_with(False)
+
+
+@patch("main.publish_unpublished_active_products")
+def test_publish_unpublished_items_unauthorized(mock_publish):
+    response = client.post("/publish-unpublished-items?dry_run=false", headers=INVALID_HEADERS)
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Unauthorized"}
+    mock_publish.assert_not_called()
+
+
+@patch("main.publish_unpublished_active_products")
+def test_publish_unpublished_items_error(mock_publish):
+    mock_publish.side_effect = Exception("Shopify down")
+
+    response = client.post("/publish-unpublished-items", headers=API_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "error", "error_msg": "Shopify down"}
+
+
+PUBLICATIONS = [
+    {"id": "gid://shopify/Publication/10", "name": "Online Store"},
+    {"id": "gid://shopify/Publication/20", "name": "Point of Sale"},
+]
+
+
+def _product(num, title="P", status="ACTIVE", pub0=False, pub1=False):
+    return {"id": f"gid://shopify/Product/{num}", "title": title, "status": status, "pub0": pub0, "pub1": pub1}
+
+
+@patch("services.shopify.publish_product_to_all_channels")
+@patch("services.shopify.run_graphql_query")
+@patch("services.shopify.fetch_publications", return_value=PUBLICATIONS)
+def test_publish_unpublished_active_products_dry_run(mock_pubs, mock_gql, mock_publish):
+    from services.shopify import publish_unpublished_active_products
+    mock_gql.return_value = _archived_page([_product(1, "A")])
+
+    result = publish_unpublished_active_products(dry_run=True)
+
+    assert result["found"] == 1
+    assert result["published"] == 0
+    assert result["would_publish"] == [{"id": "gid://shopify/Product/1", "title": "A"}]
+    mock_publish.assert_not_called()
+    # Searches for active, unpublished products and asks about every publication
+    variables = mock_gql.call_args.args[1]
+    assert variables["search"] == "status:active published_status:unpublished"
+    query = mock_gql.call_args.args[0]
+    assert 'publishedOnPublication(publicationId: "gid://shopify/Publication/10")' in query
+    assert 'publishedOnPublication(publicationId: "gid://shopify/Publication/20")' in query
+
+
+@patch("services.shopify.publish_product_to_all_channels")
+@patch("services.shopify.run_graphql_query")
+@patch("services.shopify.fetch_publications", return_value=PUBLICATIONS)
+def test_publish_unpublished_active_products_skips_products_on_any_channel_or_not_active(mock_pubs, mock_gql, mock_publish):
+    from services.shopify import publish_unpublished_active_products
+    mock_gql.return_value = _archived_page([
+        _product(1, "none"),
+        _product(2, "on POS", pub1=True),
+        _product(3, "on store", pub0=True),
+        _product(4, "draft", status="DRAFT"),
+    ])
+
+    result = publish_unpublished_active_products(dry_run=True)
+
+    assert result["found"] == 1
+    assert result["would_publish"] == [{"id": "gid://shopify/Product/1", "title": "none"}]
+
+
+@patch("services.shopify.publish_product_to_all_channels")
+@patch("services.shopify.run_graphql_query")
+@patch("services.shopify.fetch_publications", return_value=PUBLICATIONS)
+def test_publish_unpublished_active_products_paginates_and_publishes(mock_pubs, mock_gql, mock_publish):
+    from services.shopify import publish_unpublished_active_products
+    mock_gql.side_effect = [
+        _archived_page([_product(1, "A")], True, "c1"),
+        _archived_page([_product(2, "B")]),
+    ]
+
+    result = publish_unpublished_active_products(dry_run=False)
+
+    assert result == {"found": 2, "published": 2, "failed": []}
+    assert mock_gql.call_args_list[1].args[1]["cursor"] == "c1"
+    mock_pubs.assert_called_once()  # publications fetched once, not per product
+    expected_ids = ["gid://shopify/Publication/10", "gid://shopify/Publication/20"]
+    assert [c.args for c in mock_publish.call_args_list] == [(1, expected_ids), (2, expected_ids)]
+
+
+@patch("services.shopify.publish_product_to_all_channels")
+@patch("services.shopify.run_graphql_query")
+@patch("services.shopify.fetch_publications", return_value=PUBLICATIONS)
+def test_publish_unpublished_active_products_reports_failures(mock_pubs, mock_gql, mock_publish):
+    from services.shopify import publish_unpublished_active_products
+    mock_gql.return_value = _archived_page([_product(1, "A"), _product(2, "B")])
+    mock_publish.side_effect = [ValueError("boom"), 2]
+
+    result = publish_unpublished_active_products(dry_run=False)
+
+    assert result["found"] == 2
+    assert result["published"] == 1
+    assert len(result["failed"]) == 1
+    assert result["failed"][0]["id"] == "gid://shopify/Product/1"
+    assert "boom" in result["failed"][0]["error"]
+
+
+@patch("services.shopify.run_graphql_query")
+@patch("services.shopify.fetch_publications", return_value=[])
+def test_publish_unpublished_active_products_no_publications(mock_pubs, mock_gql):
+    from services.shopify import publish_unpublished_active_products
+
+    result = publish_unpublished_active_products(dry_run=False)
+
+    assert result == {"found": 0, "published": 0, "failed": [], "would_publish": []}
+    mock_gql.assert_not_called()
+
+
+@patch("services.shopify.run_graphql_query")
+def test_publish_product_to_all_channels_uses_provided_publication_ids(mock_gql):
+    from services.shopify import publish_product_to_all_channels
+    mock_gql.return_value = {"data": {"publishablePublish": {"userErrors": []}}}
+
+    count = publish_product_to_all_channels(5, ["gid://shopify/Publication/10"])
+
+    assert count == 1
+    assert mock_gql.call_count == 1  # only the publish mutation, no publications query
+    assert mock_gql.call_args.args[1] == {
+        "id": "gid://shopify/Product/5",
+        "input": [{"publicationId": "gid://shopify/Publication/10"}],
+    }
+
+
+@patch("services.shopify.run_graphql_query")
+def test_publish_product_to_all_channels_fetches_publications_by_default(mock_gql):
+    from services.shopify import publish_product_to_all_channels
+    mock_gql.side_effect = [
+        {"data": {"publications": {"nodes": PUBLICATIONS}}},
+        {"data": {"publishablePublish": {"userErrors": []}}},
+    ]
+
+    count = publish_product_to_all_channels(5)
+
+    assert count == 2
+    assert mock_gql.call_count == 2
+
+
 @pytest.mark.anyio
 @patch("services.listing_service.send_pushover")
 @patch("services.listing_service.get_shop_domain", return_value="test-store.myshopify.com")
