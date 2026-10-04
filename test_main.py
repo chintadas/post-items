@@ -190,6 +190,107 @@ def test_preview_listing_error(mock_preview):
     assert response.json() == {"status": "error", "error_msg": "Gemini API Quota Exceeded"}
 
 
+# --- Tests for DELETE /archived-items ---
+
+@patch("main.delete_archived_products")
+def test_delete_archived_items_defaults_to_dry_run(mock_delete):
+    mock_delete.return_value = {"found": 1, "deleted": 0, "failed": [], "would_delete": [{"id": "gid://shopify/Product/1", "title": "Old"}]}
+
+    response = client.delete("/archived-items", headers=API_HEADERS)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["dry_run"] is True
+    assert data["found"] == 1
+    mock_delete.assert_called_once_with(True)
+
+
+@patch("main.delete_archived_products")
+def test_delete_archived_items_real_run(mock_delete):
+    mock_delete.return_value = {"found": 2, "deleted": 2, "failed": []}
+
+    response = client.delete("/archived-items?dry_run=false", headers=API_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "success", "dry_run": False, "found": 2, "deleted": 2, "failed": []}
+    mock_delete.assert_called_once_with(False)
+
+
+@patch("main.delete_archived_products")
+def test_delete_archived_items_unauthorized(mock_delete):
+    response = client.delete("/archived-items?dry_run=false", headers=INVALID_HEADERS)
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Unauthorized"}
+    mock_delete.assert_not_called()
+
+
+@patch("main.delete_archived_products")
+def test_delete_archived_items_error(mock_delete):
+    mock_delete.side_effect = Exception("Shopify down")
+
+    response = client.delete("/archived-items", headers=API_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "error", "error_msg": "Shopify down"}
+
+
+def _archived_page(nodes, has_next=False, cursor=None):
+    return {"data": {"products": {"nodes": nodes, "pageInfo": {"hasNextPage": has_next, "endCursor": cursor}}}}
+
+
+@patch("services.shopify.run_graphql_query")
+def test_delete_archived_products_dry_run_does_not_delete(mock_gql):
+    from services.shopify import delete_archived_products
+    mock_gql.return_value = _archived_page([{"id": "gid://shopify/Product/1", "title": "A", "status": "ARCHIVED"}])
+
+    result = delete_archived_products(dry_run=True)
+
+    assert result["found"] == 1
+    assert result["deleted"] == 0
+    assert result["would_delete"] == [{"id": "gid://shopify/Product/1", "title": "A"}]
+    assert mock_gql.call_count == 1  # only the list query, no delete mutation
+
+
+@patch("services.shopify.run_graphql_query")
+def test_delete_archived_products_paginates_and_deletes(mock_gql):
+    from services.shopify import delete_archived_products
+    mock_gql.side_effect = [
+        _archived_page([{"id": "gid://shopify/Product/1", "title": "A", "status": "ARCHIVED"}], True, "c1"),
+        _archived_page([{"id": "gid://shopify/Product/2", "title": "B", "status": "ARCHIVED"}]),
+        {"data": {"productDelete": {"deletedProductId": "gid://shopify/Product/1", "userErrors": []}}},
+        {"data": {"productDelete": {"deletedProductId": "gid://shopify/Product/2", "userErrors": []}}},
+    ]
+
+    result = delete_archived_products(dry_run=False)
+
+    assert result == {"found": 2, "deleted": 2, "failed": []}
+    assert mock_gql.call_args_list[1].args[1] == {"cursor": "c1"}
+    assert mock_gql.call_args_list[2].args[1] == {"input": {"id": "gid://shopify/Product/1"}}
+
+
+@patch("services.shopify.run_graphql_query")
+def test_delete_archived_products_skips_non_archived_and_reports_failures(mock_gql):
+    from services.shopify import delete_archived_products
+    mock_gql.side_effect = [
+        _archived_page([
+            {"id": "gid://shopify/Product/1", "title": "A", "status": "ARCHIVED"},
+            {"id": "gid://shopify/Product/2", "title": "B", "status": "ACTIVE"},
+            {"id": "gid://shopify/Product/3", "title": "C", "status": "ARCHIVED"},
+        ]),
+        {"data": {"productDelete": {"deletedProductId": None, "userErrors": [{"field": ["id"], "message": "nope"}]}}},
+        {"data": {"productDelete": {"deletedProductId": "gid://shopify/Product/3", "userErrors": []}}},
+    ]
+
+    result = delete_archived_products(dry_run=False)
+
+    assert result["found"] == 2
+    assert result["deleted"] == 1
+    assert len(result["failed"]) == 1
+    assert result["failed"][0]["id"] == "gid://shopify/Product/1"
+
+
 @pytest.mark.anyio
 @patch("services.listing_service.send_pushover")
 @patch("services.listing_service.get_shop_domain", return_value="test-store.myshopify.com")

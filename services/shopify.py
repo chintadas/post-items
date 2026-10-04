@@ -714,3 +714,69 @@ def set_category_metafields(
         logger.warning(f"Category metafields set failed: {user_errors}")
     else:
         logger.info(f"Successfully updated category metafields for product {product_id}")
+
+def delete_archived_products(dry_run: bool = True) -> dict:
+    """Deletes all ARCHIVED Shopify products. With dry_run=True, only lists what would be deleted."""
+    list_query = """
+    query GetArchivedProducts($cursor: String) {
+      products(first: 100, after: $cursor, query: "status:archived") {
+        nodes {
+          id
+          title
+          status
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+    """
+    delete_mutation = """
+    mutation productDelete($input: ProductDeleteInput!) {
+      productDelete(input: $input) {
+        deletedProductId
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+
+    # Collect all archived products first (deleting while paginating would skip items)
+    archived = []
+    cursor = None
+    while True:
+        payload = run_graphql_query(list_query, {"cursor": cursor})
+        products = payload.get("data", {}).get("products", {})
+        archived.extend(p for p in products.get("nodes", []) if p.get("status") == "ARCHIVED")
+        page_info = products.get("pageInfo", {})
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info.get("endCursor")
+
+    logger.info(f"Found {len(archived)} archived products (dry_run={dry_run})")
+    if dry_run:
+        return {
+            "found": len(archived),
+            "deleted": 0,
+            "failed": [],
+            "would_delete": [{"id": p["id"], "title": p["title"]} for p in archived],
+        }
+
+    deleted = 0
+    failed = []
+    for product in archived:
+        try:
+            result = run_graphql_query(delete_mutation, {"input": {"id": product["id"]}})
+            user_errors = result.get("data", {}).get("productDelete", {}).get("userErrors", [])
+            if user_errors:
+                raise ValueError(user_errors)
+            deleted += 1
+            logger.info(f"Deleted archived product {product['id']} ({product['title']})")
+        except Exception as e:
+            logger.error(f"Failed to delete {product['id']}: {e}", exc_info=True)
+            failed.append({"id": product["id"], "title": product["title"], "error": str(e)})
+
+    return {"found": len(archived), "deleted": deleted, "failed": failed}

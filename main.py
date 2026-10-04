@@ -16,6 +16,7 @@ from config import API_AUTH_KEY
 from services.gcs import get_pending_folders
 from services.notifications import send_pushover
 from services.listing_service import process_folder_listing, preview_folder_listing_data
+from services.shopify import delete_archived_products
 
 app = FastAPI(title="Snazzy Boutique Listing Agent")
 
@@ -117,6 +118,19 @@ async def preview_listing(payload: PromptExperimentRequest, x_api_key: str = Hea
         )
     except Exception as e:
         logger.error(f"Error previewing folder {payload.folder_name}: {e}", exc_info=True)
+        return {"status": "error", "error_msg": str(e)}
+
+@app.delete("/archived-items")
+async def delete_archived_items(dry_run: bool = True, x_api_key: str = Header(None)):
+    # 1. Simple Auth Check
+    if x_api_key != API_AUTH_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    try:
+        result = await asyncio.to_thread(delete_archived_products, dry_run)
+        return {"status": "success", "dry_run": dry_run, **result}
+    except Exception as e:
+        logger.error(f"Error deleting archived items: {e}", exc_info=True)
         return {"status": "error", "error_msg": str(e)}
 
 
