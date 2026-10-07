@@ -84,6 +84,10 @@ def run_graphql_query(query: str, variables: dict = None, timeout: int = 30) -> 
         payload["variables"] = variables
 
     response = requests.post(graphql_url, headers=headers, json=payload, timeout=timeout)
+    if response.status_code == 401:
+        # Cached token likely expired (tokens last ~24h); refresh and retry once.
+        headers["X-Shopify-Access-Token"] = get_shopify_access_token(force_refresh=True)
+        response = requests.post(graphql_url, headers=headers, json=payload, timeout=timeout)
     response.raise_for_status()
     result = response.json()
     
