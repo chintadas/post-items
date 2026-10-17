@@ -90,3 +90,69 @@ async def analyze_images_via_vlm(
         # Return the model's raw text upstream as the error message source.
         raise ValueError(response.text)
 
+
+ORDER_PROMPT = (
+    "Classify each of the numbered images (in the order given, starting at 0) for an online clothing listing.\n"
+    "For each image return a category and a view:\n"
+    "- category: \"mannequin\" (item worn on a mannequin/dress form), \"flat\" (item laid flat or hung, no mannequin, "
+    "not a close-up), \"tag\" (close-up of a clothing tag, label, care label, or brand marking), or \"other\" "
+    "(details, flaws, textures, anything else).\n"
+    "- view: \"front\", \"side\", \"back\", or \"other\".\n"
+    "Return JSON only, no prose: a list of objects like "
+    "[{\"index\": 0, \"category\": \"mannequin\", \"view\": \"front\"}, ...] with one entry per image."
+)
+
+_VIEW_RANK = {"front": 0, "side": 1, "back": 2}
+
+
+def order_image_paths(gcs_paths: List[str], classifications: list) -> List[str]:
+    """Orders paths: mannequin front/side/back, else flat front/back, then tags, then the rest.
+
+    Sorting is stable, so original order is kept within each group.
+    """
+    info = {}
+    for item in classifications:
+        try:
+            info[int(item["index"])] = (str(item.get("category", "")).lower(), str(item.get("view", "")).lower())
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    has_mannequin = any(info.get(i, ("", ""))[0] == "mannequin" for i in range(len(gcs_paths)))
+    lead_category = "mannequin" if has_mannequin else "flat"
+
+    def key(i: int):
+        category, view = info.get(i, ("other", "other"))
+        if category == lead_category and view in _VIEW_RANK:
+            # Without mannequin photos only front and back lead (no sides).
+            if lead_category == "flat" and view == "side":
+                return (3, 0, i)
+            return (0, _VIEW_RANK[view], i)
+        if category == "tag":
+            return (1, 0, i)
+        return (2, 0, i)
+
+    return [gcs_paths[i] for i in sorted(range(len(gcs_paths)), key=key)]
+
+
+async def sort_images_for_posting(gcs_paths: List[str]) -> List[str]:
+    """Uses Gemini to classify images and returns them in posting order.
+
+    Falls back to the original order if classification fails.
+    """
+    if len(gcs_paths) < 2:
+        return list(gcs_paths)
+    try:
+        contents = [ORDER_PROMPT]
+        for i, path in enumerate(gcs_paths):
+            contents.append(f"Image {i}:")
+            contents.append(types.Part.from_bytes(mime_type="image/jpeg", data=bucket.blob(path).download_as_bytes()))
+        response = client.models.generate_content(model="gemini-flash-latest", contents=contents)
+        clean_json = response.text.replace('```json', '').replace('```', '').strip()
+        ordered = order_image_paths(gcs_paths, json.loads(clean_json))
+        logger.info(f"Image posting order: {ordered}")
+        return ordered
+    except Exception as e:
+        logger.warning(f"Failed to classify images for ordering, using original order: {e}")
+        return list(gcs_paths)
+
+

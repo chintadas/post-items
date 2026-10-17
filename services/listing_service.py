@@ -9,7 +9,7 @@ from services.gcs import (
     generate_signed_url,
     move_folder_to_listed,
 )
-from services.gemini import analyze_images_via_vlm
+from services.gemini import analyze_images_via_vlm, sort_images_for_posting
 from services.shopify import (
     activate_shopify_session_with_fresh_token,
     set_inventory_quantity,
@@ -107,6 +107,9 @@ async def process_folder_listing(folder_name: str, item_index: int = 1, total_it
     # Add images sequentially after product creation
     # Attempting to add many images in the initial product.save() 
     # can cause silent failures or dropped images.
+    # Order: mannequin front/side/back (or flat front/back), then tags, then the rest.
+    # ordered_image_paths = await sort_images_for_posting(image_paths)
+    # TODO: Use the ordered image paths instead of the original image paths
     for path in image_paths:
         try:
             ensure_image_size_limit(path)
