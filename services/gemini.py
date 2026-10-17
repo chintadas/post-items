@@ -134,6 +134,17 @@ def order_image_paths(gcs_paths: List[str], classifications: list) -> List[str]:
     return [gcs_paths[i] for i in sorted(range(len(gcs_paths)), key=key)]
 
 
+def classify_images(gcs_paths: List[str], prompt_override: str | None = None) -> list:
+    """Sends the images to Gemini and returns [{index, category, view}, ...]. Raises on failure."""
+    contents = [prompt_override.strip() if prompt_override else ORDER_PROMPT]
+    for i, path in enumerate(gcs_paths):
+        contents.append(f"Image {i}:")
+        contents.append(types.Part.from_bytes(mime_type="image/jpeg", data=bucket.blob(path).download_as_bytes()))
+    response = client.models.generate_content(model="gemini-flash-latest", contents=contents)
+    clean_json = response.text.replace('```json', '').replace('```', '').strip()
+    return json.loads(clean_json)
+
+
 async def sort_images_for_posting(gcs_paths: List[str]) -> List[str]:
     """Uses Gemini to classify images and returns them in posting order.
 
@@ -142,13 +153,7 @@ async def sort_images_for_posting(gcs_paths: List[str]) -> List[str]:
     if len(gcs_paths) < 2:
         return list(gcs_paths)
     try:
-        contents = [ORDER_PROMPT]
-        for i, path in enumerate(gcs_paths):
-            contents.append(f"Image {i}:")
-            contents.append(types.Part.from_bytes(mime_type="image/jpeg", data=bucket.blob(path).download_as_bytes()))
-        response = client.models.generate_content(model="gemini-flash-latest", contents=contents)
-        clean_json = response.text.replace('```json', '').replace('```', '').strip()
-        ordered = order_image_paths(gcs_paths, json.loads(clean_json))
+        ordered = order_image_paths(gcs_paths, classify_images(gcs_paths))
         logger.info(f"Image posting order: {ordered}")
         return ordered
     except Exception as e:

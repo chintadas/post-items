@@ -1,6 +1,7 @@
 # Credentials
 .env
 *.json
+!expected.json
 
 # Python
 __pycache__/
