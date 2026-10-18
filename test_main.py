@@ -615,3 +615,40 @@ async def test_process_folder_listing_department_and_source_tags(
     assert kwargs["source"] == "Preloved"
 
 
+def _classify(*items):
+    return [{"index": i, "category": c, "view": v} for i, (c, v) in enumerate(items)]
+
+
+def test_order_model_before_mannequin():
+    from services.gemini import order_image_paths
+    paths = ["a", "b", "c", "d", "e", "f", "g"]
+    cls = _classify(
+        ("other", "other"), ("mannequin", "back"), ("tag", "other"), ("model", "back"),
+        ("mannequin", "front"), ("model", "front"), ("model", "side"),
+    )
+    assert order_image_paths(paths, cls) == ["f", "g", "d", "e", "b", "c", "a"]
+
+
+def test_order_mannequin_only():
+    from services.gemini import order_image_paths
+    paths = ["a", "b", "c", "d", "e"]
+    cls = _classify(
+        ("tag", "other"), ("mannequin", "back"), ("flat", "front"), ("mannequin", "side"), ("mannequin", "front"),
+    )
+    assert order_image_paths(paths, cls) == ["e", "d", "b", "a", "c"]
+
+
+def test_order_flat_front_back_when_no_person_or_mannequin():
+    from services.gemini import order_image_paths
+    paths = ["a", "b", "c", "d", "e"]
+    cls = _classify(
+        ("other", "other"), ("tag", "other"), ("flat", "back"), ("flat", "side"), ("flat", "front"),
+    )
+    assert order_image_paths(paths, cls) == ["e", "c", "b", "a", "d"]
+
+
+def test_order_missing_classifications_keeps_original_order():
+    from services.gemini import order_image_paths
+    assert order_image_paths(["a", "b", "c"], []) == ["a", "b", "c"]
+
+

@@ -94,9 +94,10 @@ async def analyze_images_via_vlm(
 ORDER_PROMPT = (
     "Classify each of the numbered images (in the order given, starting at 0) for an online clothing listing.\n"
     "For each image return a category and a view:\n"
-    "- category: \"mannequin\" (item worn on a mannequin/dress form), \"flat\" (item laid flat or hung, no mannequin, "
+    "- category: \"model\" (item worn by a real person, full or three-quarter body views; NOT a mannequin or dress form), "
+    "\"mannequin\" (item worn on a mannequin/dress form), \"flat\" (item laid flat or hung, no person or mannequin, "
     "not a close-up), \"tag\" (close-up of a clothing tag, label, care label, or brand marking), or \"other\" "
-    "(details, flaws, textures, anything else).\n"
+    "(details, close-ups of the item on a model or mannequin, flaws, textures, anything else).\n"
     "- view: \"front\", \"side\", \"back\", or \"other\".\n"
     "Return JSON only, no prose: a list of objects like "
     "[{\"index\": 0, \"category\": \"mannequin\", \"view\": \"front\"}, ...] with one entry per image."
@@ -106,7 +107,8 @@ _VIEW_RANK = {"front": 0, "side": 1, "back": 2}
 
 
 def order_image_paths(gcs_paths: List[str], classifications: list) -> List[str]:
-    """Orders paths: mannequin front/side/back, else flat front/back, then tags, then the rest.
+    """Orders paths: model front/side/back, then mannequin front/side/back, then (only if there
+    are no model or mannequin photos) flat front/back, then tags, then the rest.
 
     Sorting is stable, so original order is kept within each group.
     """
@@ -117,19 +119,23 @@ def order_image_paths(gcs_paths: List[str], classifications: list) -> List[str]:
         except (KeyError, TypeError, ValueError):
             continue
 
-    has_mannequin = any(info.get(i, ("", ""))[0] == "mannequin" for i in range(len(gcs_paths)))
-    lead_category = "mannequin" if has_mannequin else "flat"
+    categories = {info.get(i, ("", ""))[0] for i in range(len(gcs_paths))}
+    has_person_or_mannequin = bool(categories & {"model", "mannequin"})
 
     def key(i: int):
         category, view = info.get(i, ("other", "other"))
-        if category == lead_category and view in _VIEW_RANK:
-            # Without mannequin photos only front and back lead (no sides).
-            if lead_category == "flat" and view == "side":
-                return (3, 0, i)
+        if category == "model" and view in _VIEW_RANK:
             return (0, _VIEW_RANK[view], i)
+        if category == "mannequin" and view in _VIEW_RANK:
+            return (1, _VIEW_RANK[view], i)
+        if category == "flat" and not has_person_or_mannequin and view in ("front", "back"):
+            # Only front and back lead for flat photos (no sides).
+            return (2, _VIEW_RANK[view], i)
         if category == "tag":
-            return (1, 0, i)
-        return (2, 0, i)
+            return (3, 0, i)
+        if category == "flat" and view == "side" and not has_person_or_mannequin:
+            return (5, 0, i)
+        return (4, 0, i)
 
     return [gcs_paths[i] for i in sorted(range(len(gcs_paths)), key=key)]
 
