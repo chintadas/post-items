@@ -1,8 +1,8 @@
 """CLI to test image ordering against GCS folders.
 
 Examples:
-  python test_image_order.py --folders gs://my-bucket/item-1 gs://my-bucket/item-2
-  python test_image_order.py --folders-file folders.txt --expected expected.json --output results.json
+  python evals/eval_image_order.py --folders gs://my-bucket/item-1 gs://my-bucket/item-2
+  python evals/eval_image_order.py --folders-file evals/folders.txt --expected evals/expected.json --output evals/results.json
 
 expected.json maps each folder (as given on the command line) to the expected
 ordered list of filenames:
@@ -15,6 +15,9 @@ import sys
 from typing import List, Tuple
 
 from dotenv import load_dotenv
+
+# Make `services` and `config` importable when run from any directory.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 
 def parse_args() -> argparse.Namespace:
