@@ -108,9 +108,8 @@ async def process_folder_listing(folder_name: str, item_index: int = 1, total_it
     # Attempting to add many images in the initial product.save() 
     # can cause silent failures or dropped images.
     # Order: mannequin front/side/back (or flat front/back), then tags, then the rest.
-    # ordered_image_paths = await sort_images_for_posting(image_paths)
-    # TODO: Use the ordered image paths instead of the original image paths
-    for path in image_paths:
+    ordered_image_paths = await sort_images_for_posting(image_paths)
+    for path in ordered_image_paths:
         try:
             ensure_image_size_limit(path)
         except Exception as e:
