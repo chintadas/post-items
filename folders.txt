@@ -1,0 +1,6 @@
+gs://snazzys-boutique-inventory/listed/testing/check_order/mannequin_top
+gs://snazzys-boutique-inventory/listed/testing/check_order/model_coat_1
+gs://snazzys-boutique-inventory/listed/testing/check_order/model_coat_2
+gs://snazzys-boutique-inventory/listed/testing/check_order/mannequin_shawl
+gs://snazzys-boutique-inventory/listed/testing/check_order/mannequin_sweater
+gs://snazzys-boutique-inventory/listed/testing/check_order/mannequin_jeans

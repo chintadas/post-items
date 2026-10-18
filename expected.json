@@ -1,5 +1,5 @@
 {
-  "gs://snazzys-boutique-inventory/listed/10.15.1": [
+  "gs://snazzys-boutique-inventory/listed/testing/check_order/mannequin_top": [
     "IMG_3395.JPG",
     "IMG_3406.JPG",
     "IMG_3401.JPG",
@@ -8,5 +8,54 @@
     "IMG_3577.JPG",
     "IMG_3576.JPG",
     "IMG_3580.JPG"
+  ],
+  "gs://snazzys-boutique-inventory/listed/testing/check_order/model_coat_1": [
+    "IMG_3507.JPG",
+    "IMG_3511.JPG",
+    "IMG_3513.JPG",
+    "IMG_3508.JPG",
+    "IMG_3501.JPG",
+    "IMG_3510.JPG",
+    "IMG_3512.JPG"
+  ],
+  "gs://snazzys-boutique-inventory/listed/testing/check_order/model_coat_2": [
+    "IMG_3515.JPG",
+    "IMG_3517.JPG",
+    "IMG_3520.JPG",
+    "IMG_3518.JPG",
+    "IMG_3519.JPG",
+    "IMG_3521.JPG",
+    "IMG_3522.JPG",
+    "IMG_3523.JPG",
+    "IMG_3530.JPG"
+  ],
+  "gs://snazzys-boutique-inventory/listed/testing/check_order/mannequin_shawl": [
+    "IMG_3690.JPG",
+    "IMG_3691.JPG",
+    "IMG_3581.JPG",
+    "IMG_3582.JPG",
+    "IMG_3584.JPG"
+  ],
+  "gs://snazzys-boutique-inventory/listed/testing/check_order/mannequin_sweater": [
+    "IMG_3592.JPG",
+    "IMG_3593.JPG",
+    "IMG_3595.JPG",
+    "IMG_3594.JPG",
+    "IMG_3588.JPG",
+    "IMG_3586.JPG",
+    "IMG_3589.JPG",
+    "IMG_3590.JPG",
+    "IMG_3591.JPG"
+  ],
+  "gs://snazzys-boutique-inventory/listed/testing/check_order/mannequin_jeans": [
+    "IMG_3606.JPG",
+    "IMG_3609.JPG",
+    "IMG_3608.JPG",
+    "IMG_3600.JPG",
+    "IMG_3603.JPG",
+    "IMG_3604.JPG",
+    "IMG_3598.JPG",
+    "IMG_3601.JPG",
+    "IMG_3607.JPG"
   ]
 }
